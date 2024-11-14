@@ -3,8 +3,9 @@ import argparse
 import cv2
 from joblib import delayed, Parallel
 import json
-from read_write_model import *
+from utils.read_write_model import *
 import sys
+import os
 
 # from dataset_readers.py:160 readColmapSceneInfo
 def read_depth_params(path):
