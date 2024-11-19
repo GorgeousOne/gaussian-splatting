@@ -60,20 +60,19 @@ def load_norm_depth_map(args, image_meta):
     return monodepthmap
 
 
-def cam2worldmat(cam_pos, cam_rot):
-    t = np.eye(4)
-    t[:3, :3] = cam_rot
-    t[:3, 3] = cam_pos
-    return t
-
-
 # https://github.com/bmild/nerf/blob/18b8aebda6700ed659cb27a0c348b737a5f6ab60/run_nerf_helpers.py#L123
-def get_rays(H, W, focal, cam2world):
+def get_rays(H, W, focal, c2w_t, c2w_rot):
     """Get ray origins, directions from a pinhole camera."""
+
+    # create xy coordinates for each pixel (in camera space)
     i, j = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32), indexing='xy')
-    dirs = np.stack([(i - W * 0.5) / focal, -(j - H * 0.5) / focal, -np.ones_like(i)], axis=-1)
-    rays_d = np.einsum('...ij,...j->...i', cam2world[:3, :3], dirs)  # Apply rotation from c2w
-    rays_o = np.broadcast_to(cam2world[:3, -1], rays_d.shape)  # Broadcast camera origin to match rays_d shape
+    # translate mid of image to 0,0
+    dirs = np.stack([(i - W * 0.5) / focal, (j - H * 0.5) / focal, np.ones_like(i)], axis=-1)
+
+    # apply inverse of world-to-camera rotation to all direction vectors
+    rays_d = np.einsum('...ij,...j->...i', c2w_rot, dirs)
+    # apply inverted translateion to all ray origins
+    rays_o = np.broadcast_to(c2w_t, rays_d.shape)
     return rays_o, rays_d
 
 
@@ -97,12 +96,11 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
 
     # transform depth map pixels from image space to camera space using xys and depth
     # transform points from camera space to world space using camera position and rotation
-    cam_pos = image_meta.tvec
-    cam_rot = rwm.qvec2rotmat(image_meta.qvec)
-    cam2world = cam2worldmat(cam_pos, cam_rot)
+    c2w_rot = rwm.qvec2rotmat(image_meta.qvec).T
+    c2w_t = c2w_rot @ -image_meta.tvec
     
     depth_scale = 1/255
-    ray_o, rays_d = get_rays(depth_shape[0], depth_shape[1], f_x*map_scale, cam2world)
+    ray_o, rays_d = get_rays(depth_shape[0], depth_shape[1], f_x*map_scale, c2w_t, c2w_rot)
     points = ray_o + rays_d * depth_map[..., np.newaxis] * depth_scale
 
     # flatten from 2D to 1D array of points
@@ -113,8 +111,6 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
     # filter out points at infinity
     valid_mask = np.isfinite(depth_map).flatten()
     valid_points = points[valid_mask]
-
-    # breakpoint()
 
     return gu.BasicPointCloud(valid_points, np.ones_like(valid_points, dtype=np.uint) * 255, np.zeros_like(valid_points))
 
@@ -127,9 +123,11 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', default="bin")
     args = parser.parse_args()
 
+    i = 1
+
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    cloud = get_cloud(1, cam_intrinsics, images_metas)
-    ply_path = os.path.join(args.out_dir, images_metas[1].name.split('.')[0] + ".ply")
+    cloud = get_cloud(i, cam_intrinsics, images_metas)
+    ply_path = os.path.join(args.out_dir, images_metas[i].name.split('.')[0] + ".ply")
 
     if not os.path.exists(args.out_dir):
         os.mkdir(args.out_dir)
