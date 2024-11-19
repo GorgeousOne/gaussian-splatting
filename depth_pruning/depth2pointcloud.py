@@ -1,11 +1,20 @@
+"""Helper to convert image depth maps to point clouds
+I can only get it to run with 'python -m depth_pruning.depth2pointcloud' because of weird relative package imports.
+"""
+
 import numpy as np
 import argparse
 import cv2
 from joblib import delayed, Parallel
 import json
-from utils.read_write_model import *
+
+import utils.read_write_model as rwm
+import scene.dataset_readers as dr
+import utils.graphics_utils as gu
+
 import sys
 import os
+from typing import List
 
 # from dataset_readers.py:160 readColmapSceneInfo
 def read_depth_params(path):
@@ -46,7 +55,9 @@ def load_norm_depth_map(args, image_meta):
         invmonodepthmap = invmonodepthmap[..., 0]
 
     invmonodepthmap = invmonodepthmap.astype(np.float32) / (2**16)
-    return invmonodepthmap
+    invmonodepthmap[invmonodepthmap < 1e-3] = np.nan
+    monodepthmap = 1 / invmonodepthmap
+    return monodepthmap
 
 
 def cam2worldmat(cam_pos, cam_rot):
@@ -66,7 +77,7 @@ def get_rays(H, W, focal, cam2world):
     return rays_o, rays_d
 
 
-def get_cloud(key, cameras, images, depth_params=None):
+def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
     image_meta = images[key]
     cam_intrinsic = cameras[image_meta.camera_id]
     depth_map = load_norm_depth_map(args, image_meta)
@@ -79,7 +90,6 @@ def get_cloud(key, cameras, images, depth_params=None):
     # scale = depth_params[key]["scale"]
     # offset = depth_params[key]["offset"]
     # depth_map = 1 / (inv_depth_map * scale + offset)
-    depth_map = depth_map * 3
 
     # get pinhole camera focal lengths
     f_x = cam_intrinsic.params[0]
@@ -88,23 +98,43 @@ def get_cloud(key, cameras, images, depth_params=None):
     # transform depth map pixels from image space to camera space using xys and depth
     # transform points from camera space to world space using camera position and rotation
     cam_pos = image_meta.tvec
-    cam_rot = qvec2rotmat(image_meta.qvec)
+    cam_rot = rwm.qvec2rotmat(image_meta.qvec)
     cam2world = cam2worldmat(cam_pos, cam_rot)
     
+    depth_scale = 1/255
     ray_o, rays_d = get_rays(depth_shape[0], depth_shape[1], f_x*map_scale, cam2world)
-    points = ray_o + rays_d * depth_map[..., np.newaxis]
+    points = ray_o + rays_d * depth_map[..., np.newaxis] * depth_scale
 
-    # return points in world space
-    return 
+    # flatten from 2D to 1D array of points
+    x, y, z = points.shape
+    points = points.reshape(x * y, z)
+
+    
+    # filter out points at infinity
+    valid_mask = np.isfinite(depth_map).flatten()
+    valid_points = points[valid_mask]
+
+    # breakpoint()
+
+    return gu.BasicPointCloud(valid_points, np.ones_like(valid_points, dtype=np.uint) * 255, np.zeros_like(valid_points))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--base_dir', default="../datasets/tandt/train")
     parser.add_argument('--depths_dir', default="../datasets/tandt/train/depths")
-    parser.add_argument('--out-dir', default="../datasets/tandt/train")
+    parser.add_argument('--out_dir', default="../datasets/tandt/train/pcds")
     parser.add_argument('--model_type', default="bin")
     args = parser.parse_args()
 
-    cam_intrinsics, images_metas, points3d = read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    get_cloud(1, cam_intrinsics, images_metas)
+    cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
+    cloud = get_cloud(1, cam_intrinsics, images_metas)
+    ply_path = os.path.join(args.out_dir, images_metas[1].name.split('.')[0] + ".ply")
+
+    if not os.path.exists(args.out_dir):
+        os.mkdir(args.out_dir)
+
+    print(ply_path)
+    dr.storePly(ply_path, cloud.points, cloud.colors)
+
+
