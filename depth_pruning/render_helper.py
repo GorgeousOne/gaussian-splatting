@@ -68,17 +68,18 @@ def hsv2rgb(h,s,v):
 
 
 if __name__ == "__main__":
-    plotter = pv.Plotter()
-    render_pcd(plotter, "/home/mighty/repos/datasets/tandt/train/sparse/0/points3D.ply")
-    render_pcd(plotter, "/home/mighty/repos/datasets/tandt/train/pcds/00001.ply")
+    plotter = pv.Plotter(window_size=[1920, 1080])
+    render_pcd(plotter, "/home/mighty/repos/datasets/db/playroom/sparse/0/points3D.ply")
+    render_pcd(plotter, "/home/mighty/repos/datasets/db/playroom/pcds/DSC05580.ply")
     #render_pcd(plotter, "/home/mighty/repos/datasets/tandt/train/pcds/00029.ply")
 
     # image_metas consists of cam extrinsics and image info
-    cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join("/home/mighty/repos/datasets/tandt/train/sparse/0"), ext=".bin")
+    cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join("/home/mighty/repos/datasets/db/playroom/sparse/0"), ext=".bin")
 
-    for i in images_metas.keys():
+    for i in [9]: #images_metas.keys():
         rainbow_color = hsv2rgb(i / len(images_metas) * 0.8, 1, 1)
         render_cam(plotter, i, images_metas, cam_intrinsics, color=rainbow_color, scale=0.3, show_up=False)
+        
 
     plotter.show_axes()
     plotter.show_grid(
@@ -86,7 +87,8 @@ if __name__ == "__main__":
         location='outer',
         color='black'
     )
-    #plotter.view_xz()
+    plotter.view_zx()
+    plotter.renderer.camera.is_set = True
     plotter.camera.position = (0, 0, 0)
-    plotter.camera.distance = 5
+    # plotter.camera.distance = 5
     plotter.show()

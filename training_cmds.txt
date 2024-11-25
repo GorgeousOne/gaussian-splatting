@@ -1,0 +1,40 @@
+# train dataset
+python train.py -s /home/mighty/repos/datasets/tandt/train/ -m ./output/model-name --eval
+# train with depth regularizazion
+python train.py -s /home/mighty/repos/datasets/tandt/train/ -d /home/mighty/repos/datasets/tandt/train/depths/ -m ./output/model-name --eval
+# exposure compensation paramters
+--exposure_lr_init 0.001 --exposure_lr_final 0.0001 --exposure_lr_delay_steps 5000 --exposure_lr_delay_mult 0.001 --train_test_exp
+
+
+# resume from checkpoint (?)
+python train.py -s /home/mighty/repos/datasets/tandt/train/ --start_checkpoint ./output/x/chkpnt.pth
+
+
+    
+----
+
+# render with trained model
+python render.py -m ./output/x/
+
+# run interactive viewer
+./SIBR_viewers/install/bin/SIBR_gaussianViewer_app -m ./output/x/
+
+----
+
+# generate metrics
+python metrics.py --model_paths [x]
+
+# you might need to create a sparse/0/test.txt with image names to exclude from training (with extension)
+
+----
+
+# generate depth estimations
+# use in conda env "depth-anything"
+# in directory repos
+python ./Depth-Anything-V2/run.py --encoder vitl --pred-only --grayscale --img-path /home/mighty/repos/datasets/tandt/train/images/ --outdir /home/mighty/repos/datasets/tandt/train/depths/
+python ./Depth-Anything-V2/run.py --encoder vitl --pred-only --grayscale --img-path /home/mighty/repos/datasets/db/playroom/images/ --outdir /home/mighty/repos/datasets/db/playroom/depths/
+
+# generate depth scaling json
+# "gaussian-splatting" again
+python utils/make_depth_scale.py --base_dir /home/mighty/repos/datasets/tandt/train/ --depths_dir /home/mighty/repos/datasets/tandt/train/depths/
+python utils/make_depth_scale.py --base_dir /home/mighty/repos/datasets/db/playroom/ --depths_dir /home/mighty/repos/datasets/db/playroom/depths/

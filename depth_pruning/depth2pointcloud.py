@@ -17,25 +17,15 @@ import os
 from typing import List
 
 # from dataset_readers.py:160 readColmapSceneInfo
-def read_depth_params(path):
+def read_depth_params(depth_params_path):
     """read generated depth_params.json from colmap dir
     """
-    depth_params_file = os.path.join(path, "sparse/0", "depth_params.json")
-    ## if depth_params_file isnt there AND depths file is here -> throw error
     depths_params = None
     try:
-        with open(depth_params_file, "r") as f:
+        with open(depth_params_path, "r") as f:
             depths_params = json.load(f)
-        all_scales = np.array([depths_params[key]["scale"] for key in depths_params])
-        if (all_scales > 0).sum():
-            med_scale = np.median(all_scales[all_scales > 0])
-        else:
-            med_scale = 0
-        for key in depths_params:
-            depths_params[key]["med_scale"] = med_scale
-
     except FileNotFoundError:
-        print(f"Error: depth_params.json file not found at path '{depth_params_file}'.")
+        print(f"Error: depth_params.json file not found at path '{depth_params_path}'.")
         sys.exit(1)
     except Exception as e:
         print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
@@ -44,9 +34,12 @@ def read_depth_params(path):
 
 
 # from make_depth_scale.py:8 get_scales
-def load_norm_depth_map(args, image_meta):
+def load_norm_depth_map(args, image_meta, depth_params):
     n_remove = len(image_meta.name.split('.')[-1]) + 1
-    invmonodepthmap = cv2.imread(f"{args.depths_dir}/{image_meta.name[:-n_remove]}.png", cv2.IMREAD_UNCHANGED)
+    image_key = image_meta.name[:-n_remove]
+
+    invmonodepthmap = cv2.imread(f"{args.depths_dir}/{image_key}.png", cv2.IMREAD_UNCHANGED)
+    depth_param = depth_params[image_key]
     
     if invmonodepthmap is None:
         return None
@@ -56,7 +49,12 @@ def load_norm_depth_map(args, image_meta):
 
     invmonodepthmap = invmonodepthmap.astype(np.float32) / (2**16)
     invmonodepthmap[invmonodepthmap < 1e-3] = np.nan
-    monodepthmap = 1 / invmonodepthmap
+
+    # map depth map from inverse depth to world depth
+    scale = depth_param["scale"]
+    offset = depth_param["offset"]
+
+    monodepthmap = 1 / (invmonodepthmap * scale + offset) 
     return monodepthmap
 
 
@@ -76,19 +74,12 @@ def get_rays(H, W, focal, c2w_t, c2w_rot):
     return rays_o, rays_d
 
 
-def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
+def get_cloud(key, cameras, images:List[rwm.Image], depth_params):
     image_meta = images[key]
     cam_intrinsic = cameras[image_meta.camera_id]
-    depth_map = load_norm_depth_map(args, image_meta)
+    depth_map = load_norm_depth_map(args, image_meta, depth_params)
     depth_shape = depth_map.shape
     map_scale = depth_shape[0] / cam_intrinsic.height
-
-    # map depth map from inverse depth to world depth
-    # "A Hierarchical 3D Gaussian Representation for Real-Time Rendering of Very Large Datasets" mention something about depth not being invariant
-    # TODO find you own depth map scaling
-    # scale = depth_params[key]["scale"]
-    # offset = depth_params[key]["offset"]
-    # depth_map = 1 / (inv_depth_map * scale + offset)
 
     # get pinhole camera focal lengths
     f_x = cam_intrinsic.params[0]
@@ -99,9 +90,9 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
     c2w_rot = rwm.qvec2rotmat(image_meta.qvec).T
     c2w_t = c2w_rot @ -image_meta.tvec
     
-    depth_scale = 1/255
+    # depth_scale = 1/255
     ray_o, rays_d = get_rays(depth_shape[0], depth_shape[1], f_x*map_scale, c2w_t, c2w_rot)
-    points = ray_o + rays_d * depth_map[..., np.newaxis] * depth_scale
+    points = ray_o + rays_d * depth_map[..., np.newaxis]
 
     # flatten from 2D to 1D array of points
     x, y, z = points.shape
@@ -117,16 +108,17 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base_dir', default="../datasets/tandt/train")
-    parser.add_argument('--depths_dir', default="../datasets/tandt/train/depths")
-    parser.add_argument('--out_dir', default="../datasets/tandt/train/pcds")
+    parser.add_argument('--base_dir', default="../datasets/db/playroom")
+    parser.add_argument('--depths_dir', default="../datasets/db/playroom/depths")
+    parser.add_argument('--out_dir', default="../datasets/db/playroom/pcds")
     parser.add_argument('--model_type', default="bin")
     args = parser.parse_args()
 
-    i = 1
+    i = 9
 
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    cloud = get_cloud(i, cam_intrinsics, images_metas)
+    depth_params = read_depth_params(os.path.join(args.base_dir, "sparse", "0", "depth_params.json"))
+    cloud = get_cloud(i, cam_intrinsics, images_metas, depth_params)
     ply_path = os.path.join(args.out_dir, images_metas[i].name.split('.')[0] + ".ply")
 
     if not os.path.exists(args.out_dir):
