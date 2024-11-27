@@ -8,9 +8,10 @@ from datetime import datetime
 
 def list_eval_imgs(imgs_dir, output_file, eval_step):
     img_names = sorted(os.listdir(imgs_dir))
-    eval_imgs = [img_names[i] for i in range(eval_step, len(img_names), eval_step)]
+    eval_imgs = [img_names[i] for i in range(eval_step-1, len(img_names), eval_step)]
     with open(output_file, 'w', encoding='utf-8') as f:
         f.writelines(eval_imgs)
+    print("Listed", len(eval_imgs), "as evaluation images from", imgs_dir)
 
 
 def gen_depths(imgs_dir, working_dir, output_dir):
@@ -57,9 +58,9 @@ if __name__ == '__main__':
         '--eval'
     ]
 
-    if not os.path.exists(eval_file):
-        list_eval_imgs(base_dir, os.path.join(colmap_dir, 'test.txt'), args.eval_step)
-    
+    # if not os.path.exists(eval_file):  # or the listed images do not equal the eval step
+    list_eval_imgs(imgs_dir, os.path.join(colmap_dir, 'test.txt'), args.eval_step)
+    exit()
     if args.depth_reg:
         training_args.append(f'-d {depths_dir}')
         model_name += '_depth'
@@ -84,7 +85,7 @@ if __name__ == '__main__':
     
     command = f'bash -i -c "conda run -n gaussian_splatting python ./train.py {" ".join(training_args)}"'
     print('Start training: ' + command)
-
+    exit() # quit here until i figure out how to pipe console outputs correctly
     try:
         result = subprocess.run(
             command,
