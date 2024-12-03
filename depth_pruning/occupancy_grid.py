@@ -3,6 +3,7 @@ import numpy as np
 class VoxelGrid:
 
     def __init__(self, resolution, bound_max, bound_min=np.zeros((3,))):
+        self.resolution = resolution
         self.inv_res = 1 / resolution
         self.bound_max = np.array(bound_max)
         self.bound_min = np.array(bound_min)
@@ -11,10 +12,10 @@ class VoxelGrid:
         shape = np.ceil(size * self.inv_res).astype(np.int64)
         self.voxels = np.zeros(shape, dtype=np.int64)
 
-    def __contains__(self, points3d):
-        inside = np.all((self.bound_min <= points3d) & (points3d <= self.bound_max), axis=1)
-        return inside
+    def contains(self, points3d):
+        return np.all((self.bound_min <= points3d) & (points3d <= self.bound_max), axis=1)
 
+    #TODO maybe find a way to return -1 for values out of bounds?
     def __getitem__(self, indices):
         return self.voxels[tuple(indices.T)]
 
@@ -51,4 +52,6 @@ if __name__ == '__main__':
     assert (2, 2, 2) == v.voxels.shape
     assert np.array_equal(np.array([[[6, 0], [0, 0]], [[0, 0], [0, 5]]]), v.voxels)
     assert 6 == v.max_occ()
-    assert np.array_equal(np.array([6, 0, 5]), v[np.array([[0, 0, 0], [0, 1, 0], [1, 1, 1]])])
+    assert np.array_equal([6, 0, 5], v[np.array([[0, 0, 0], [1, 0, 0], [1, 1, 1]])])
+    assert np.array_equal([True, True, False], v.contains(np.array([[0, 0, 0], [.5, .5, .5], [1, 1, 1]])))
+    # print(v.get_occupancies(np.array([[0, 0, 0], [.5, .5, .5], [1, 1, 1]])))

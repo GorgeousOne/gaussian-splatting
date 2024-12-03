@@ -1,5 +1,7 @@
 """Helper to convert image depth maps to point clouds
-I can only get it to run with 'python -m depth_pruning.depth2pointcloud' because of weird relative package imports.
+I can only get it to run with
+python -m depth_pruning.depth2pointcloud
+because of weird relative package imports.
 """
 
 import numpy as np
@@ -15,6 +17,7 @@ import utils.graphics_utils as gu
 import sys
 import os
 from typing import List
+import tqdm
 
 # from dataset_readers.py:160 readColmapSceneInfo
 def read_depth_params(depth_params_path):
@@ -40,10 +43,10 @@ def load_norm_depth_map(args, image_meta, depth_params):
 
     invmonodepthmap = cv2.imread(f"{args.depths_dir}/{image_key}.png", cv2.IMREAD_UNCHANGED)
     depth_param = depth_params[image_key]
-    
+
     if invmonodepthmap is None:
         return None
-    
+
     if invmonodepthmap.ndim != 2:
         invmonodepthmap = invmonodepthmap[..., 0]
 
@@ -54,7 +57,7 @@ def load_norm_depth_map(args, image_meta, depth_params):
     scale = depth_param["scale"]
     offset = depth_param["offset"]
 
-    monodepthmap = 1 / (invmonodepthmap * scale + offset) 
+    monodepthmap = 1 / (invmonodepthmap * scale + offset)
     return monodepthmap
 
 
@@ -89,7 +92,7 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params):
     # transform points from camera space to world space using camera position and rotation
     c2w_rot = rwm.qvec2rotmat(image_meta.qvec).T
     c2w_t = c2w_rot @ -image_meta.tvec
-    
+
     # depth_scale = 1/255
     ray_o, rays_d = get_rays(depth_shape[0], depth_shape[1], f_x*map_scale, c2w_t, c2w_rot)
     points = ray_o + rays_d * depth_map[..., np.newaxis]
@@ -98,7 +101,7 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params):
     x, y, z = points.shape
     points = points.reshape(x * y, z)
 
-    
+
     # filter out points at infinity
     valid_mask = np.isfinite(depth_map).flatten()
     valid_points = points[valid_mask]
@@ -114,17 +117,20 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', default="bin")
     args = parser.parse_args()
 
-    i = 9
-
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
     depth_params = read_depth_params(os.path.join(args.base_dir, "sparse", "0", "depth_params.json"))
-    cloud = get_cloud(i, cam_intrinsics, images_metas, depth_params)
-    ply_path = os.path.join(args.out_dir, images_metas[i].name.split('.')[0] + ".ply")
 
-    if not os.path.exists(args.out_dir):
-        os.mkdir(args.out_dir)
-
-    print(ply_path)
-    dr.storePly(ply_path, cloud.points, cloud.colors)
+    force = False
 
 
+    for key in tqdm.tqdm(images_metas.keys()):
+        ply_path = os.path.join(args.out_dir, images_metas[key].name.split('.')[0] + ".ply")
+        if os.path.exists(ply_path) and not force:
+            continue
+        cloud = get_cloud(key, cam_intrinsics, images_metas, depth_params)
+
+        if not os.path.exists(args.out_dir):
+            os.mkdir(args.out_dir)
+
+        print(ply_path)
+        dr.storePly(ply_path, cloud.points, cloud.colors)
