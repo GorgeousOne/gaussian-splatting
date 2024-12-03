@@ -104,12 +104,22 @@ def render_voxels(plotter, grid=oc.VoxelGrid):
 
     grid = pv.StructuredGrid(x, y, z)
     # Assign cell data for occupancy
-    grid["occupancy"] = occupancy_counts.ravel(order="F")  # PyVista uses Fortran order
+    #grid["occupancy"] = occupancy_counts.ravel(order="F")  # PyVista uses Fortran order
+    grid["occupancy"] = np.sqrt(occupancy_counts.ravel(order="F"))  # Example: Square root scaling
 
     # Mask out cells with occupancy = 0
     masked_grid = grid.extract_cells(grid["occupancy"] > 0)
-    plotter.add_mesh(masked_grid, show_edges=True, cmap="viridis", scalars="occupancy")
+    actor = plotter.add_mesh(masked_grid, show_edges=True, cmap="viridis", scalars="occupancy")
 
+    # white wireframe box around occupancy grid
+    # actually nothing is ever really going to be outside that box :shrug:
+    # plotter.add_mesh(grid.outline(), color="white", line_width=2)
+
+    def toggle_vis(flag):
+        actor.SetVisibility(flag)
+
+    plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 10))
+    plotter.add_text('toggle occupancy grid', position=(70, 10))
 
 def hsv2rgb(h,s,v):
     return tuple(round(i * 255) for i in colorsys.hsv_to_rgb(h,s,v))
