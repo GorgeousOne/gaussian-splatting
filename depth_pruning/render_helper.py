@@ -15,6 +15,23 @@ import utils.graphics_utils as gu
 import utils.read_write_model as rwm
 import depth_pruning.occupancy_grid as oc
 
+class CheckboxList():
+    def __init__(self, plotter, min_x=10, min_y=10, spacing=60, text_size=12):
+        self.pl = plotter
+        self.min_x = min_x
+        self.min_y = min_y
+        self.spacing = spacing
+        self.actors = []
+
+    def add_checkbox(self, actor, label="", is_visible=False):
+        pos_y = self.min_y + len(self.actors) * self.spacing
+        plotter.add_checkbox_button_widget(lambda flag: actor.SetVisibility(flag), value=is_visible, color_on='white', position=(self.min_x, pos_y))
+        plotter.add_text(label, position=(70, pos_y))
+
+        actor.SetVisibility(is_visible)
+        self.actors.append(actor)
+
+
 def norm_vec(v, scale=1):
     mag = np.linalg.norm(v)
     return v / mag * scale
@@ -40,7 +57,7 @@ def fetchObj(path):
         normals=np.array(normals))
 
 
-def render_pcd(plotter, file_path):
+def render_pcd(plotter, file_path, add_checkbox=True):
     if file_path.endswith('.ply'):
         pcd = dr.fetchPly(file_path)
     else:
@@ -48,10 +65,14 @@ def render_pcd(plotter, file_path):
 
     point_cloud = pv.PolyData(pcd.points)
     if pcd.colors is None:
-        plotter.add_points(point_cloud, point_size=3)
+        actor = plotter.add_points(point_cloud, point_size=3)
     else:
         point_cloud['colors'] = pcd.colors
-        plotter.add_points(point_cloud, scalars='colors', rgb=True, point_size=1, )
+        actor = plotter.add_points(point_cloud, scalars='colors', rgb=True, point_size=1, )
+
+    if add_checkbox:
+        global checkboxes
+        checkboxes.add_checkbox(actor, 'pcd', is_visible=True)
 
 
 def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=True):
@@ -110,17 +131,10 @@ def render_voxels(plotter, grid=oc.VoxelGrid):
 
     # Mask out cells with occupancy = 0
     masked_grid = grid.extract_cells(grid["occupancy"] > 0)
+
     actor = plotter.add_mesh(masked_grid, show_edges=True, cmap="viridis", scalars="occupancy")
-
-    # white wireframe box around occupancy grid
-    # actually nothing is ever really going to be outside that box :shrug:
-    # plotter.add_mesh(grid.outline(), color="white", line_width=2)
-
-    def toggle_vis(flag):
-        actor.SetVisibility(flag)
-
-    plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 10))
-    plotter.add_text('toggle pcd occupancy grid', position=(70, 10))
+    global checkboxes
+    checkboxes.add_checkbox(actor, 'pcd occ grid')
 
 
 def render_voxel_obj(plotter, obj_path):
@@ -128,14 +142,21 @@ def render_voxel_obj(plotter, obj_path):
         warnings.simplefilter("ignore")
         mesh = pv.read(obj_path)
 
-    voxelized = pv.voxelize(mesh, density=0.1, check_surface=False)  # Adjust density as needed
-    actor = plotter.add_mesh(voxelized, show_edges=True)
+    # voxelized = pv.voxelize(mesh, density=0.1, check_surface=False)  # Adjust density as needed
+    grid = oc.voxelize_mesh(mesh, 0.1)
+    global checkboxes
 
-    def toggle_vis(flag):
-        actor.SetVisibility(flag)
+    actor = plotter.add_mesh(grid, show_edges=True)
+    checkboxes.add_checkbox(actor, 'mesh occ grid')
 
-    plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 70))
-    plotter.add_text('toggle mesh occupancy grid', position=(70, 70))
+    actor = plotter.add_mesh(mesh)
+    checkboxes.add_checkbox(actor, 'mesh')
+
+    # def toggle_vis(flag):
+    #     actor.SetVisibility(flag)
+
+    # plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 70))
+    # plotter.add_text('mesh occupancy grid', position=(70, 70))
 
 
 def hsv2rgb(h,s,v):
@@ -153,6 +174,8 @@ def convert_bin2ply(bin_path):
 if __name__ == "__main__":
     sparse_ply_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.ply'
     plotter = pv.Plotter(window_size=[1920, 1080])
+    checkboxes = CheckboxList(plotter)
+
     # render_pcd(plotter, "/home/mighty/repos/datasets/db/playroom/sparse/0/points3D.ply")
     convert_bin2ply('/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin')
     render_pcd(plotter, sparse_ply_path)
@@ -169,7 +192,7 @@ if __name__ == "__main__":
         # render_pcd(plotter, os.path.join(pcds_dir, img_name))
 
 
-    voxels = oc.create_voxel_grid(dr.fetchPly(sparse_ply_path).points, 0.05)
+    voxels = oc.voxelize_pcd(dr.fetchPly(sparse_ply_path).points, 0.1)
     render_voxels(plotter, voxels)
     render_voxel_obj(plotter, '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj')
 
@@ -179,8 +202,6 @@ if __name__ == "__main__":
         location='outer',
         color='black'
     )
-    plotter.view_zx()
-    plotter.renderer.camera.is_set = True
-    # plotter.camera.position = (0, 0, 0)
-    # plotter.camera.distance = 5
+    plotter.view_xy()
+    # plotter.enable_parallel_projection()
     plotter.show()
