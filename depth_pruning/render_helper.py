@@ -6,6 +6,7 @@ because of weird relative package imports.
 
 import os
 import colorsys
+import warnings
 
 import numpy as np
 import pyvista as pv
@@ -119,7 +120,23 @@ def render_voxels(plotter, grid=oc.VoxelGrid):
         actor.SetVisibility(flag)
 
     plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 10))
-    plotter.add_text('toggle occupancy grid', position=(70, 10))
+    plotter.add_text('toggle pcd occupancy grid', position=(70, 10))
+
+
+def render_voxel_obj(plotter, obj_path):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        mesh = pv.read(obj_path)
+
+    voxelized = pv.voxelize(mesh, density=0.1, check_surface=False)  # Adjust density as needed
+    actor = plotter.add_mesh(voxelized, show_edges=True)
+
+    def toggle_vis(flag):
+        actor.SetVisibility(flag)
+
+    plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 70))
+    plotter.add_text('toggle mesh occupancy grid', position=(70, 70))
+
 
 def hsv2rgb(h,s,v):
     return tuple(round(i * 255) for i in colorsys.hsv_to_rgb(h,s,v))
@@ -152,8 +169,9 @@ if __name__ == "__main__":
         # render_pcd(plotter, os.path.join(pcds_dir, img_name))
 
 
-    voxels = oc.create_voxel_grid(dr.fetchPly(sparse_ply_path).points, 0.1)
+    voxels = oc.create_voxel_grid(dr.fetchPly(sparse_ply_path).points, 0.05)
     render_voxels(plotter, voxels)
+    render_voxel_obj(plotter, '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj')
 
     plotter.show_axes()
     plotter.show_grid(
