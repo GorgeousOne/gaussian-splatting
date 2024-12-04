@@ -259,7 +259,7 @@ def get_valid_calib_region(calib):
         print("Cropped initial calibration due to high distortion", str(w) + "x" + str(h), "->", str(new_w) + "x" + str(new_h))
 
     return (top, right, bottom, left)
-    
+
 def rotate_vector(vec, axis, angle):
     axis = axis.normalized()
     collinear = axis * (vec * axis)
@@ -633,6 +633,28 @@ def save_points(params, frame, folder, calibs, tracks, images):
     print("Saved", num_pts, "points from", len(tracks), "tracks")
 
 
+def save_model(params, frame, folder, calibs, tracks, images, precision=6):
+    if not frame.model:
+        print("No 3D model frame to export for Aaron's experiments!")
+        return
+    T_shift = get_coord_transform(frame, params.use_localframe)
+    model = frame.model
+    shifted_vertices = [T_shift.mulp(vertex.coord) for vertex in model.vertices]
+
+    with open(folder + "mesh.obj", "w", encoding="utf-8") as fout:
+        fout.write("# Exported and centered 3D Model for Aaron's little experiments >:)\n")
+
+        # write vertices with given decimal places
+        for vertex in shifted_vertices:
+            fout.write(f"v {vertex.x:.{precision}f} {vertex.y:.{precision}f} {vertex.z:.{precision}f}\n")
+
+        # write faces indices
+        for face in model.faces:
+            indices = [i+1 for i in face.vertices]  # OBJ is 1-based indexing
+            fout.write(f"f {' '.join(map(str, indices))}\n")
+    print("Saved mesh.obj for Aaron's little experiments.")
+
+
 class ExportSceneParams():
     def __init__(self):
         # default values for parameters
@@ -717,10 +739,10 @@ def export_for_gaussian_splatting(params = ExportSceneParams(), progress = QtWid
                 save_undistorted_masks(params, frame, folder, calibs)
             save_cameras(params, folder, calibs)
 
-
             (tracks, images) = get_filtered_track_structure(frame, folder, calibs)
             save_images(params, frame, folder, calibs, tracks, images)
             save_points(params, frame, folder, calibs, tracks, images)
+            save_model(params, frame, folder, calibs, tracks, images)
 
     set_progress(1)
     log_result("Done")

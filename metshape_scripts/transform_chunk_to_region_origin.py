@@ -1,3 +1,7 @@
+"""
+A script to center and rotate the selected chunk to align with it's region.
+"""
+
 import Metashape
 
 def get_inv_region_transform(region):
@@ -20,7 +24,6 @@ def inverse_transform_chunk(doc):
 
     chunk = doc.chunk
     region_transform = get_inv_region_transform(chunk.region)
-    Metashape.app.addUndo("Transform chunk to region origin")
     chunk.transform.matrix = region_transform
 
 doc = Metashape.app.document
