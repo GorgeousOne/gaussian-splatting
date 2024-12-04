@@ -1,4 +1,5 @@
 import numpy as np
+import pyvista as pv
 
 class VoxelGrid:
 
@@ -33,12 +34,43 @@ class VoxelGrid:
         np.add.at(self.voxels, tuple(indices.T), 1)
 
 
-def create_voxel_grid(points3d, resolution) -> VoxelGrid:
+def voxelize_pcd(points3d=np.ndarray, resolution=float) -> VoxelGrid:
     min = points3d.min(axis=0)
     max = points3d.max(axis=0)
-    grid = VoxelGrid(resolution, max, min)
+    # round grid bounds to nearest multiple of resolution
+    # so multiple grids align with each other
+    grid_min = np.floor(min / resolution) * resolution
+    grid_max = np.ceil(max / resolution) * resolution
+
+    grid = VoxelGrid(resolution, grid_max, grid_min)
     grid.add_points(points3d)
     return grid
+
+def b_round(x, base=1):
+    return round(x / base) * base
+
+def voxelize_mesh(mesh, density):
+    """pyvista's voxelize but round the grid bounds to nearest multiple of density"""
+    # check and pre-process input mesh
+    surface = mesh.extract_geometry()  # filter preserves topology
+
+    x_min, x_max, y_min, y_max, z_min, z_max = mesh.bounds
+    x = np.arange(b_round(x_min, density), b_round(x_max, density), density)
+    y = np.arange(b_round(y_min, density), b_round(y_max, density), density)
+    z = np.arange(b_round(z_min, density), b_round(z_max, density), density)
+    x, y, z = np.meshgrid(x, y, z)
+
+    # Create unstructured grid from the structured grid
+    grid = pv.StructuredGrid(x, y, z)
+    ugrid = pv.UnstructuredGrid(grid)
+
+    # get part of the mesh within the mesh's bounding surface.
+    selection = ugrid.select_enclosed_points(surface, tolerance=0.0, check_surface=False)
+    mask = selection.point_data['SelectedPoints'].view(np.bool_)
+
+    # extract cells from point indices
+    vox = ugrid.extract_points(mask)
+    return vox
 
 
 if __name__ == '__main__':
@@ -47,7 +79,7 @@ if __name__ == '__main__':
     points_high = np.random.uniform(0.5, 1.0, (5, 3))
     points = np.vstack((np.array([0, 0, 0]), points_low, points_high))
 
-    v = create_voxel_grid(points, .5)
+    v = voxelize_pcd(points, .5)
 
     assert (2, 2, 2) == v.voxels.shape
     assert np.array_equal(np.array([[[6, 0], [0, 0]], [[0, 0], [0, 5]]]), v.voxels)
