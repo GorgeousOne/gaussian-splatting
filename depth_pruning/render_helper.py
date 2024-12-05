@@ -115,7 +115,7 @@ def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=Tru
 def render_voxels(plotter, grid=oc.VoxelGrid):
     min_point = grid.bound_min
     grid_shape = grid.voxels.shape
-    voxel_size = grid.resolution
+    voxel_size = grid.density
     occupancy_counts = grid.voxels
 
     # Generate the voxel grid points
@@ -134,7 +134,7 @@ def render_voxels(plotter, grid=oc.VoxelGrid):
 
     actor = plotter.add_mesh(masked_grid, show_edges=True, cmap="viridis", scalars="occupancy")
     global checkboxes
-    checkboxes.add_checkbox(actor, 'pcd occ grid')
+    checkboxes.add_checkbox(actor, 'pcd occ grid', True)
 
 
 def render_voxel_obj(plotter, obj_path):
@@ -151,12 +151,6 @@ def render_voxel_obj(plotter, obj_path):
 
     actor = plotter.add_mesh(mesh)
     checkboxes.add_checkbox(actor, 'mesh')
-
-    # def toggle_vis(flag):
-    #     actor.SetVisibility(flag)
-
-    # plotter.add_checkbox_button_widget(toggle_vis, value=True, color_on='white', position=(10, 70))
-    # plotter.add_text('mesh occupancy grid', position=(70, 70))
 
 
 def hsv2rgb(h,s,v):
@@ -192,9 +186,14 @@ if __name__ == "__main__":
         # render_pcd(plotter, os.path.join(pcds_dir, img_name))
 
 
-    voxels = oc.voxelize_pcd(dr.fetchPly(sparse_ply_path).points, 0.1)
-    render_voxels(plotter, voxels)
-    render_voxel_obj(plotter, '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj')
+    # voxels = oc.voxelize_pcd(dr.fetchPly(sparse_ply_path).points, 0.1)
+    # render_voxels(plotter, voxels)
+    voxels2 = oc.voxelize_mesh('/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh-low-res.obj', 0.1)
+    render_voxels(plotter, voxels2)
+
+    mesh = pv.read('/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh-low-res.obj')
+    actor = plotter.add_mesh(mesh)
+    checkboxes.add_checkbox(actor, 'mesh')
 
     plotter.show_axes()
     plotter.show_grid(

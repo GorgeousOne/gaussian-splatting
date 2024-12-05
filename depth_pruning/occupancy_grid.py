@@ -1,16 +1,17 @@
 import numpy as np
-import pyvista as pv
+import depth_pruning.tri_aabb as ta
+import tqdm
 
 class VoxelGrid:
 
-    def __init__(self, resolution, bound_max, bound_min=np.zeros((3,))):
-        self.resolution = resolution
-        self.inv_res = 1 / resolution
+    def __init__(self, density, bound_min, bound_max):
+        self.density = density
+        self.inv_density = 1 / density
         self.bound_max = np.array(bound_max)
         self.bound_min = np.array(bound_min)
 
         size = self.bound_max - self.bound_min
-        shape = np.ceil(size * self.inv_res).astype(np.int64)
+        shape = np.ceil(size * self.inv_density).astype(np.int64)
         self.voxels = np.zeros(shape, dtype=np.int64)
 
     def contains(self, points3d):
@@ -21,7 +22,10 @@ class VoxelGrid:
         return self.voxels[tuple(indices.T)]
 
     def get_indices(self, points3d):
-        return np.floor((points3d-self.bound_min) * self.inv_res).astype(np.int64)
+        return np.floor((points3d-self.bound_min) * self.inv_density).astype(np.int64)
+
+    def get_points(self, indices):
+        return indices * self.density + self.bound_min
 
     def get_occupancies(self, points3d):
         return self[self.get_indices(points3d)]
@@ -29,49 +33,60 @@ class VoxelGrid:
     def max_occ(self):
         return self.voxels.max()
 
+    def add_occupancy(self, indices):
+        np.add.at(self.voxels, tuple(indices.T), 1)
+
     def add_points(self, points3d):
         indices = self.get_indices(points3d)
         np.add.at(self.voxels, tuple(indices.T), 1)
 
-
-def voxelize_pcd(points3d=np.ndarray, resolution=float) -> VoxelGrid:
+def get_voxel_bounds(points3d, density:float):
     min = points3d.min(axis=0)
     max = points3d.max(axis=0)
-    # round grid bounds to nearest multiple of resolution
+    # round grid bounds to nearest multiple of density
     # so multiple grids align with each other
-    grid_min = np.floor(min / resolution) * resolution
-    grid_max = np.ceil(max / resolution) * resolution
+    grid_min = np.floor(min / density) * density
+    grid_max = np.ceil(max / density) * density
+    return grid_min, grid_max
 
-    grid = VoxelGrid(resolution, grid_max, grid_min)
+
+def voxelize_pcd(points3d:np.ndarray, density:float) -> VoxelGrid:
+    grid = VoxelGrid(density, *get_voxel_bounds(points3d, density))
     grid.add_points(points3d)
     return grid
 
-def b_round(x, base=1):
-    return round(x / base) * base
+def voxelize_mesh(obj_path, density):
+    verts, faces = read_obj_to_np(obj_path)
+    grid = VoxelGrid(density, *get_voxel_bounds(verts, density))
+    voxel_indices = grid.get_indices(verts)
+    extents = np.array([density, density, density])
 
-def voxelize_mesh(mesh, density):
-    """pyvista's voxelize but round the grid bounds to nearest multiple of density"""
-    # check and pre-process input mesh
-    surface = mesh.extract_geometry()  # filter preserves topology
+    for face in tqdm.tqdm(faces):
+        indices = voxel_indices[face]
+        i_min = np.min(indices, axis=0)
+        i_max = np.max(indices, axis=0)
 
-    x_min, x_max, y_min, y_max, z_min, z_max = mesh.bounds
-    x = np.arange(b_round(x_min, density), b_round(x_max, density), density)
-    y = np.arange(b_round(y_min, density), b_round(y_max, density), density)
-    z = np.arange(b_round(z_min, density), b_round(z_max, density), density)
-    x, y, z = np.meshgrid(x, y, z)
+        for idx in np.ndindex(*(i_max - i_min + 1)):
+            voxel = i_min + idx
+            if ta.intersects_triangle_aabb(*verts[face], grid.get_points(voxel) + 0.5 * density, extents):
+                grid.add_occupancy(voxel)
+    return grid
 
-    # Create unstructured grid from the structured grid
-    grid = pv.StructuredGrid(x, y, z)
-    ugrid = pv.UnstructuredGrid(grid)
-
-    # get part of the mesh within the mesh's bounding surface.
-    selection = ugrid.select_enclosed_points(surface, tolerance=0.0, check_surface=False)
-    mask = selection.point_data['SelectedPoints'].view(np.bool_)
-
-    # extract cells from point indices
-    vox = ugrid.extract_points(mask)
-    return vox
-
+def read_obj_to_np(obj_path):
+    vertices = []
+    faces = []
+    with open(obj_path, 'r') as f:
+        for line in f:
+            if line.startswith('v '):  # Vertex line
+                parts = line.split()
+                vertex = list(map(float, parts[1:4]))  # Convert x, y, z to float
+                vertices.append(vertex)
+            elif line.startswith('f '):  # Face line
+                parts = line.split()
+                # OBJ format: Faces are 1-based, adjust for 0-based indexing
+                face = [int(p.split('/')[0]) - 1 for p in parts[1:]]
+                faces.append(face)
+    return np.array(vertices), np.array(faces, dtype=int)
 
 if __name__ == '__main__':
     #test 6 values in [0, 0.5) and 5 in [0.5, 1)
