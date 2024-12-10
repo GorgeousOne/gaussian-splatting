@@ -6,14 +6,14 @@ because of weird relative package imports.
 
 import os
 import colorsys
-import warnings
+import trimesh
+import trimesh.voxel.base as tv
 
 import numpy as np
 import pyvista as pv
 import scene.dataset_readers as dr
 import utils.graphics_utils as gu
 import utils.read_write_model as rwm
-import depth_pruning.occupancy_grid as oc
 
 class CheckboxList():
     def __init__(self, plotter, min_x=10, min_y=10, spacing=60, text_size=12):
@@ -57,22 +57,16 @@ def fetchObj(path):
         normals=np.array(normals))
 
 
-def render_pcd(plotter, file_path, add_checkbox=True):
-    if file_path.endswith('.ply'):
-        pcd = dr.fetchPly(file_path)
-    else:
-        pcd = fetchObj(file_path)
-
+def render_pcd(plotter, pcd:gu.BasicPointCloud, name):
     point_cloud = pv.PolyData(pcd.points)
     if pcd.colors is None:
         actor = plotter.add_points(point_cloud, point_size=3)
     else:
         point_cloud['colors'] = pcd.colors
-        actor = plotter.add_points(point_cloud, scalars='colors', rgb=True, point_size=1, )
+        actor = plotter.add_points(point_cloud, rgb=True, point_size=1)
 
-    if add_checkbox:
-        global checkboxes
-        checkboxes.add_checkbox(actor, 'pcd', is_visible=True)
+    global checkboxes
+    checkboxes.add_checkbox(actor, name, is_visible=True)
 
 
 def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=True):
@@ -112,45 +106,46 @@ def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=Tru
         plotter.add_mesh(cam_up, color='green', point_size=0)
 
 
-def render_voxels(plotter, grid=oc.VoxelGrid):
-    min_point = grid.bound_min
-    grid_shape = grid.voxels.shape
-    voxel_size = grid.density
-    occupancy_counts = grid.voxels
+def render_trimesh_voxel(plotter, grid:tv.VoxelGrid, name):
+    render_voxels(plotter, grid.bounds[0], grid.matrix, grid.pitch[0], name)
 
+
+def render_voxels(plotter, min_point:np.ndarray, voxels:np.ndarray, density:float, name):
     # Generate the voxel grid points
-    x = np.arange(grid_shape[0] + 1) * voxel_size + min_point[0]
-    y = np.arange(grid_shape[1] + 1) * voxel_size + min_point[1]
-    z = np.arange(grid_shape[2] + 1) * voxel_size + min_point[2]
+    shape = voxels.shape
+    x = np.arange(shape[0] + 1) * density + min_point[0]
+    y = np.arange(shape[1] + 1) * density + min_point[1]
+    z = np.arange(shape[2] + 1) * density + min_point[2]
     x, y, z = np.meshgrid(x, y, z, indexing="ij")
 
     grid = pv.StructuredGrid(x, y, z)
-    # Assign cell data for occupancy
-    #grid["occupancy"] = occupancy_counts.ravel(order="F")  # PyVista uses Fortran order
-    grid["occupancy"] = np.sqrt(occupancy_counts.ravel(order="F"))  # Example: Square root scaling
-
-    # Mask out cells with occupancy = 0
+    grid["occupancy"] = voxels.ravel(order="F")  # PyVista uses Fortran order
+    # only display cells where occupancy actually >0
     masked_grid = grid.extract_cells(grid["occupancy"] > 0)
 
-    actor = plotter.add_mesh(masked_grid, show_edges=True, cmap="viridis", scalars="occupancy")
+    actor = plotter.add_mesh(masked_grid, show_edges=True)
     global checkboxes
-    checkboxes.add_checkbox(actor, 'pcd occ grid', True)
+    checkboxes.add_checkbox(actor, name)
 
 
-def render_voxel_obj(plotter, obj_path):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        mesh = pv.read(obj_path)
+def get_voxel_bounds(points3d, density:float):
+    min = points3d.min(axis=0)
+    max = points3d.max(axis=0)
+    # round grid bounds to nearest multiple of density
+    # so multiple grids align with each other
+    min_bound = np.floor(min / density) * density
+    max_bound = np.ceil(max / density) * density
+    return np.stack([min_bound, max_bound], axis=0)
 
-    # voxelized = pv.voxelize(mesh, density=0.1, check_surface=False)  # Adjust density as needed
-    grid = oc.voxelize_mesh(mesh, 0.1)
-    global checkboxes
 
-    actor = plotter.add_mesh(grid, show_edges=True)
-    checkboxes.add_checkbox(actor, 'mesh occ grid')
+def voxelize_pcd(points3d:np.ndarray, density:float):
+    bounds = get_voxel_bounds(points3d, density)
+    grid_shape = np.ceil((bounds[1] - bounds[0]) / density).astype(int)
+    voxel_grid = np.zeros(grid_shape, dtype=bool)
 
-    actor = plotter.add_mesh(mesh)
-    checkboxes.add_checkbox(actor, 'mesh')
+    indices = ((points3d - bounds[0]) / density).astype(int)
+    voxel_grid[tuple(indices.T)] = True
+    return bounds, voxel_grid
 
 
 def hsv2rgb(h,s,v):
@@ -167,31 +162,34 @@ def convert_bin2ply(bin_path):
 
 if __name__ == "__main__":
     sparse_ply_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.ply'
+    sparse_bin_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin'
+    mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
+    pcds_dir = '/home/mighty/repos/datasets/db/playroom/pcds'
+
     plotter = pv.Plotter(window_size=[1920, 1080])
     checkboxes = CheckboxList(plotter)
 
-    # render_pcd(plotter, "/home/mighty/repos/datasets/db/playroom/sparse/0/points3D.ply")
-    convert_bin2ply('/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin')
-    render_pcd(plotter, sparse_ply_path)
+
+    pcd = dr.fetchPly(sparse_ply_path)
+    convert_bin2ply(sparse_bin_path)
+    render_pcd(plotter, pcd, 'sparse')
 
 
     # image_metas consists of cam extrinsics and image info
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join('/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0'), ext='.bin')
-    pcds_dir = '/home/mighty/repos/datasets/db/playroom/pcds'
     for key in range(1, 20): #images_metas.keys():
         rainbow_color = hsv2rgb(key / len(images_metas) * 0.8, 1, 1)
         render_cam(plotter, key, images_metas, cam_intrinsics, color=rainbow_color, scale=0.3, show_up=False)
-
         img_name = images_metas[key].name.split('.')[0] + '.ply'
         # render_pcd(plotter, os.path.join(pcds_dir, img_name))
 
+    bounds, sparse_voxels = voxelize_pcd(pcd.points, 0.1)
+    render_voxels(plotter, bounds[0], sparse_voxels, 0.1, 'sparse occ grid')
 
-    # voxels = oc.voxelize_pcd(dr.fetchPly(sparse_ply_path).points, 0.1)
-    # render_voxels(plotter, voxels)
-    voxels2 = oc.voxelize_mesh('/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh-low-res.obj', 0.1)
-    render_voxels(plotter, voxels2)
+    voxels = trimesh.load(mesh_path).voxelized(0.1)
+    render_trimesh_voxel(plotter, voxels, 'mesh occ grid')
 
-    mesh = pv.read('/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh-low-res.obj')
+    mesh = pv.read(mesh_path)
     actor = plotter.add_mesh(mesh)
     checkboxes.add_checkbox(actor, 'mesh')
 
