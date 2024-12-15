@@ -111,9 +111,9 @@ def get_cloud(key, cameras, images:List[rwm.Image], depth_params):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base_dir', default="../datasets/db/playroom")
-    parser.add_argument('--depths_dir', default="../datasets/db/playroom/depths")
-    parser.add_argument('--out_dir', default="../datasets/db/playroom/pcds")
+    parser.add_argument('--base_dir', default="../datasets/db/playroom/metashape_reco")
+    parser.add_argument('--depths_dir', default="../datasets/db/playroom/metashape_reco/depths")
+    parser.add_argument('--out_dir', default="../datasets/db/playroom/metashape_reco/pcds")
     parser.add_argument('--model_type', default="bin")
     args = parser.parse_args()
 

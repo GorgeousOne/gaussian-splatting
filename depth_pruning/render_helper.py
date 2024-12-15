@@ -14,6 +14,7 @@ import pyvista as pv
 import scene.dataset_readers as dr
 import utils.graphics_utils as gu
 import utils.read_write_model as rwm
+import depth_pruning.make_occupancy as mo
 
 class CheckboxList():
     def __init__(self, plotter, min_x=10, min_y=10, spacing=60, text_size=12):
@@ -66,7 +67,7 @@ def render_pcd(plotter, pcd:gu.BasicPointCloud, name):
         actor = plotter.add_points(point_cloud, rgb=True, point_size=1)
 
     global checkboxes
-    checkboxes.add_checkbox(actor, name, is_visible=True)
+    checkboxes.add_checkbox(actor, name)
 
 
 def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=True):
@@ -128,26 +129,6 @@ def render_voxels(plotter, min_point:np.ndarray, voxels:np.ndarray, density:floa
     checkboxes.add_checkbox(actor, name)
 
 
-def get_voxel_bounds(points3d, density:float):
-    min = points3d.min(axis=0)
-    max = points3d.max(axis=0)
-    # round grid bounds to nearest multiple of density
-    # so multiple grids align with each other
-    min_bound = np.floor(min / density) * density
-    max_bound = np.ceil(max / density) * density
-    return np.stack([min_bound, max_bound], axis=0)
-
-
-def voxelize_pcd(points3d:np.ndarray, density:float):
-    bounds = get_voxel_bounds(points3d, density)
-    grid_shape = np.ceil((bounds[1] - bounds[0]) / density).astype(int)
-    voxel_grid = np.zeros(grid_shape, dtype=bool)
-
-    indices = ((points3d - bounds[0]) / density).astype(int)
-    voxel_grid[tuple(indices.T)] = True
-    return bounds, voxel_grid
-
-
 def hsv2rgb(h,s,v):
     return tuple(round(i * 255) for i in colorsys.hsv_to_rgb(h,s,v))
 
@@ -164,14 +145,14 @@ if __name__ == "__main__":
     sparse_ply_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.ply'
     sparse_bin_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin'
     mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
-    pcds_dir = '/home/mighty/repos/datasets/db/playroom/pcds'
+    pcds_dir = '/home/mighty/repos/datasets/db/playroom/metashape_reco/pcds'
 
     plotter = pv.Plotter(window_size=[1920, 1080])
     checkboxes = CheckboxList(plotter)
 
 
-    pcd = dr.fetchPly(sparse_ply_path)
     convert_bin2ply(sparse_bin_path)
+    pcd = dr.fetchPly(sparse_ply_path)
     render_pcd(plotter, pcd, 'sparse')
 
 
@@ -181,12 +162,15 @@ if __name__ == "__main__":
         rainbow_color = hsv2rgb(key / len(images_metas) * 0.8, 1, 1)
         render_cam(plotter, key, images_metas, cam_intrinsics, color=rainbow_color, scale=0.3, show_up=False)
         img_name = images_metas[key].name.split('.')[0] + '.ply'
-        # render_pcd(plotter, os.path.join(pcds_dir, img_name))
+        if key == 15:
+            depth_pcd = dr.fetchPly(os.path.join(pcds_dir, img_name))
+            render_pcd(plotter, depth_pcd, 'depth map proj ' + str(key))
 
-    bounds, sparse_voxels = voxelize_pcd(pcd.points, 0.1)
+    bounds, sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
     render_voxels(plotter, bounds[0], sparse_voxels, 0.1, 'sparse occ grid')
 
     voxels = trimesh.load(mesh_path).voxelized(0.1)
+    breakpoint()
     render_trimesh_voxel(plotter, voxels, 'mesh occ grid')
 
     mesh = pv.read(mesh_path)
