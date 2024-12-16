@@ -24,6 +24,7 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 # >===
 import depth_pruning.make_occupancy as mo
+import depth_pruning.training_render as tr
 import trimesh
 # <===
 
@@ -152,6 +153,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
 
         iter_end.record()
+
+        # >===
+        if (iteration % 200 == 0):
+            tr.show_images_side_by_side(image, gt_image, None)
+        # <===
 
         with torch.no_grad():
             # Progress bar

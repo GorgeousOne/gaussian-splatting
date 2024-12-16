@@ -1,3 +1,5 @@
+---- TRAINING
+
 # train dataset
 python train.py -s /home/mighty/repos/datasets/tandt/train/ -m ./output/model-name --eval
 # train with depth regularizazion
@@ -10,23 +12,23 @@ python train.py -s /home/mighty/repos/datasets/tandt/train/ -d /home/mighty/repo
 python train.py -s /home/mighty/repos/datasets/tandt/train/ --start_checkpoint ./output/x/chkpnt.pth
 
 
-    
-----
+
+---- EVALUATION
+
 
 # render with trained model
-python render.py -m ./output/x/
+python render.py -m ./output/x
+
+# generate metrics
+# you need to create a sparse/0/test.txt with image names to exclude from training (with extension)
+python metrics.py --model_paths ./output/x
 
 # run interactive viewer
 ./SIBR_viewers/install/bin/SIBR_gaussianViewer_app -m ./output/x/
 
-----
 
-# generate metrics
-python metrics.py --model_paths [x]
 
-# you might need to create a sparse/0/test.txt with image names to exclude from training (with extension)
-
-----
+---- DEPTH TRAINING
 
 # generate depth estimations
 # use in conda env "depth-anything"
