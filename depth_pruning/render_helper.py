@@ -166,12 +166,13 @@ if __name__ == "__main__":
             depth_pcd = dr.fetchPly(os.path.join(pcds_dir, img_name))
             render_pcd(plotter, depth_pcd, 'depth map proj ' + str(key))
 
-    bounds, sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
-    render_voxels(plotter, bounds[0], sparse_voxels, 0.1, 'sparse occ grid')
+    # bounds, sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
+    # render_voxels(plotter, bounds[0], sparse_voxels, 0.1, 'sparse occ grid')
+    sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
+    render_trimesh_voxel(plotter, sparse_voxels, 'sparse occ grid')
 
-    voxels = trimesh.load(mesh_path).voxelized(0.1)
-    breakpoint()
-    render_trimesh_voxel(plotter, voxels, 'mesh occ grid')
+    mesh_voxels = trimesh.load(mesh_path).voxelized(0.1)
+    render_trimesh_voxel(plotter, mesh_voxels, 'mesh occ grid')
 
     mesh = pv.read(mesh_path)
     actor = plotter.add_mesh(mesh)

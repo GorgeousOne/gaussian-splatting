@@ -1,27 +1,28 @@
 import numpy as np
-from trimesh.voxel import VoxelGrid
+from trimesh import grouping, voxel, base
+from trimesh.voxel import encoding as enc
+from trimesh import transformations as tr
 
-def get_voxel_bounds(points3d, density:float):
-    min = points3d.min(axis=0)
-    max = points3d.max(axis=0)
-    # round grid bounds to nearest multiple of density
-    # so multiple grids align with each other
-    min_bound = np.floor(min / density) * density
-    max_bound = np.ceil(max / density) * density
-    return np.stack([min_bound, max_bound], axis=0)
-
-
+# from timesh.voxel.creation.py:voxelize_subdivide()
 def voxelize_pcd(points3d:np.ndarray, density:float):
-    bounds = get_voxel_bounds(points3d, density)
-    grid_shape = np.ceil((bounds[1] - bounds[0]) / density).astype(int)
-    voxel_grid = np.zeros(grid_shape, dtype=bool)
+    # convert the vertices to their voxel grid position
+    # still pondering why they used round instead of floor 🤔
+    hit = np.round(points3d / density).astype(int)
 
-    indices = ((points3d - bounds[0]) / density).astype(int)
-    voxel_grid[tuple(indices.T)] = True
-    return bounds, voxel_grid
+    # remove duplicates
+    unique, _inverse = grouping.unique_rows(hit)
+    # get the voxel centers in model space
+    occupied_index = hit[unique]
+    origin_index = occupied_index.min(axis=0)
+    origin_position = origin_index * density
+
+    return voxel.VoxelGrid(
+        enc.SparseBinaryEncoding(occupied_index - origin_index),
+        transform=tr.scale_and_translate(scale=density, translate=origin_position),
+    )
 
 # hehe
-def voxelize_mesh(mesh:VoxelGrid, density=0.1):
+def voxelize_mesh(mesh:base.Trimesh, density:float):
     '''
     Returns a boolean voxel grid with all voxels set to true where the mesh intersects.
     AND THE WHOLE THING IS NOT AXIS ALIGNED!!! ITS OFFSET BY 0.5x OF THE DENSITY!!!
