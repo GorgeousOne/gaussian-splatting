@@ -1,11 +1,11 @@
 '''Scipt to create and render a blender file with an obj model of a 3D reconstrction and colmap camera data.
 With checker textures to create masks for exsisting images.'''
 import bpy
-# import read_write_model as rwm
 import numpy as np
 import mathutils
 import os
-from tqdm import tqdm
+# from tqdm import tqdm
+
 
 def load_obj(obj_path):
 	bpy.ops.wm.obj_import(filepath=obj_path)
@@ -62,6 +62,7 @@ def colmap_to_blender_focal(f_colmap, pixel_w, sensor_w):
 
 
 def load_cameras(images, cameras, sensor_w=36):
+	import utils.read_write_model as rwm
 	scene = bpy.context.scene
 
 	for key, image_meta in images.items():
@@ -93,31 +94,33 @@ def set_render_settings():
 	scene.eevee.taa_render_samples = 1
 
 
-def render_cams(output_dir):
+def render_masks(output_dir):
 	scene = bpy.context.scene
 	i = 0
 
-	for cam in tqdm([obj for obj in scene.objects if obj.type == 'CAMERA']):
+	# for cam in tqdm([obj for obj in scene.objects if obj.type == 'CAMERA']):
+	for cam in [obj for obj in scene.objects if obj.type == 'CAMERA']:
 		scene.camera = cam
 		bpy.context.scene.render.filepath = os.path.join(output_dir, f'mask_{cam.name}')
 		bpy.ops.render.render(write_still=True)
 
 
-def main(blender_filepath, obj_filepath, renders_dir='//renders', force=False):
+def import_colmap_reco_to_blend(obj_filepath, force=False):
 	if os.path.exists(blender_filepath) and not force:
-		bpy.ops.wm.open_mainfile(filepath=blender_filepath)
-	else:
 		bpy.ops.wm.read_factory_settings(use_empty=True)
-		set_render_settings()
 		load_obj(obj_filepath)
-
-		# cam_intrinsics, images_metas, points3d = rwm.read_model('./playroom/sparse/0', ext='.bin')
-		# load_cameras(images_metas, cam_intrinsics)
-		bpy.ops.wm.save_as_mainfile(filepath=blender_filepath)
-	# render_cams(renders_dir)
+		cam_intrinsics, images_metas, points3d = rwm.read_model('./playroom/sparse/0', ext='.bin')
+		load_cameras(images_metas, cam_intrinsics)
 
 # blender -b --python
 if __name__ == '__main__':
-	blender_filepath = '/home/mighty/Documents/blender/wavefront/masking.blend'
-	obj_filepath = '/home/mighty/Documents/blender/wavefront/bedroom.obj'
-	main(blender_filepath, obj_filepath)
+	blender_filepath = '/home/mighty/Documents/blender/bedroom_masked.blend'
+	renders_dir='//renders'
+
+	# obj_filepath = '/home/mighty/Documents/blender/wavefront/bedroom.obj'
+	#import_colmap_reco_to_blend(obj_filepath)
+
+	bpy.ops.wm.open_mainfile(filepath=blender_filepath)
+	set_render_settings()
+	bpy.ops.wm.save_as_mainfile(filepath=blender_filepath)
+	render_masks(renders_dir)

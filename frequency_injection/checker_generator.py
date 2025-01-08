@@ -59,7 +59,6 @@ def replace_mtl_textures_with_checker(mtl_path):
 	with open(mtl_path, 'w') as file:
 		file.writelines(updated_lines)
 
-	print("Texture replacement complete.")
 
 if __name__ == "__main__":
 	pass
