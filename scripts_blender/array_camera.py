@@ -33,7 +33,7 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
         # Ensure object transforms are applied
         obj_matrix = obj.matrix_world
 
-        collection_name = f"Camera Array {obj.name}"
+        collection_name = f"Camera Array - {obj.name}"
         cam_array = bpy.data.collections.get(collection_name)
 
         if cam_array:
@@ -43,26 +43,21 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
         bpy.context.scene.collection.children.link(cam_array)
 
         # Create cameras for each face
-        for face in bm.faces:
+        for face in sorted(bm.faces, key=lambda face: face_center(face)):
             # Compute world-space face center
-            face_center = sum((obj_matrix @ v.co for v in face.verts), Vector()) / len(face.verts)
+            translation = face_center(face)
+            forward_vec = (obj_matrix.to_3x3() @ face.normal).normalized()
+            up_vec = Vector((0, 0, 1))
+            right_vec = forward_vec.cross(up_vec).normalized()
+            up_vec = right_vec.cross(forward_vec).normalized()
+            rotation_matrix = Matrix([right_vec, up_vec, -forward_vec]).transposed()
 
-            # Get face normal in world space
-            face_normal = (obj_matrix.to_3x3() @ face.normal).normalized()
-
-            # Create new camera
-            cam_data = bpy.data.cameras.new(name="Face_Camera")
-            cam_obj = bpy.data.objects.new(name="Face_Camera", object_data=cam_data)
-
-            # Position camera at face center
-            cam_obj.location = face_center
-
-            # Align camera with face normal
-            # Compute a rotation matrix to align Z-axis with the normal
-            up_vector = Vector((0, 0, 1))
-            rotation_matrix = up_vector.rotation_difference(-face_normal).to_matrix().to_4x4()
-            cam_obj.matrix_world = Matrix.Translation(face_center) @ rotation_matrix
+            cam_data = bpy.data.cameras.new(name="Camera")
+            cam_obj = bpy.data.objects.new(name="Camera", object_data=cam_data)
+            cam_obj.location = translation
+            cam_obj.rotation_euler = rotation_matrix.to_euler()
             cam_obj.data = reference_cam.data.copy()
+            cam_obj.hide_render = False
 
 
             # Link camera to scene
@@ -73,10 +68,13 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
         bm.free()
         return {'FINISHED'}
 
+    def face_center(face):
+        return = sum((v.co for v in face.verts), mathutils.Vector((0, 0, 0))) / len(face.verts)
+
     def del_tree(self, coll):
         for c in coll.children:
             self.del_tree(c)
-        bpy.data.collections.remove(coll,do_unlink=True)
+        bpy.data.collections.remove(coll, do_unlink=True)
 
     def parent_cams(self, obj, cam_array):
         bpy.ops.object.select_all(action='DESELECT')  # Deselect everything
@@ -90,11 +88,11 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
 
 class VIEW3D_PT_camera_panel(bpy.types.Panel):
     """Creates a Panel in the 3D Viewport"""
-    bl_label = "Face Cameras"
-    bl_idname = "VIEW3D_PT_face_cameras"
+    bl_label = "Camera Arrays"
+    bl_idname = "VIEW3D_PT_camera_arrays"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Face Cameras"
+    bl_category = "Camera Arrays"
 
     def draw(self, context):
         layout = self.layout
