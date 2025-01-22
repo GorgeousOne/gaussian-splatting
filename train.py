@@ -26,6 +26,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 import depth_pruning.make_occupancy as mo
 import depth_pruning.training_render as tr
 import trimesh
+import time
 # <===
 
 try:
@@ -47,6 +48,11 @@ except:
     SPARSE_ADAM_AVAILABLE = False
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+    # >===
+    # mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
+    mesh_path = '/home/mighty/Documents/blender/bedroom2/occupancy-mesh.obj'
+    voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.05)
+    # <===
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
@@ -74,9 +80,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     ema_Ll1depth_for_log = 0.0
 
+
     # >===
-    mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
-    voxels = mo.voxelize_mesh(trimesh.load(mesh_path))
+    logs_buffer = []
+    start_time = time.time()
+    logs_path = os.path.join(scene.model_path, "logs.csv")
+    with open(logs_path, "w") as f:
+        f.write("time,iteration,loss,Ll1depth\n")
     # <===
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
@@ -170,6 +180,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration == opt.iterations:
                 progress_bar.close()
 
+            # >=== Log training progress every 100 iterations
+            if iteration % 10 == 0:
+                timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log}")
+            if iteration % 1000 == 0:
+                with open(logs_path, "a") as f:
+                    f.write("\n".join(logs_buffer) + "\n")
+                logs_buffer.clear()
+            # <===
+
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
             if (iteration in saving_iterations):
@@ -184,7 +204,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii, voxels)
+                    # if iteration >= 5000 and iteration % 1000 == 0:
+                        # gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii, voxels)
+                    # else:
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii, None)
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -277,8 +300,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 15_000, 20_000, 25_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[15_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15_000])

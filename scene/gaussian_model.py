@@ -465,7 +465,9 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
-        self.prune_by_occupancy(voxels)
+        if voxels is not None:
+            self.prune_by_occupancy(voxels)
+            print("lets prune by occupancy")
         tmp_radii = self.tmp_radii
         self.tmp_radii = None
 

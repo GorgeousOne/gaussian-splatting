@@ -55,7 +55,8 @@ if __name__ == '__main__':
     eval_file = os.path.join(colmap_dir, 'test.txt')
     training_args = [
         f'-s {base_dir}',
-        '--eval'
+        '--eval',
+        '--data_device=cpu'
     ]
 
     # if not os.path.exists(eval_file):  # or the listed images do not equal the eval step
