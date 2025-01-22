@@ -43,9 +43,9 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
         bpy.context.scene.collection.children.link(cam_array)
 
         # Create cameras for each face
-        for face in sorted(bm.faces, key=lambda face: face_center(face)):
+        for face in sorted(bm.faces, key=lambda face: self.face_center(face, obj_matrix)):
             # Compute world-space face center
-            translation = face_center(face)
+            translation = self.face_center(face, obj_matrix)
             forward_vec = (obj_matrix.to_3x3() @ face.normal).normalized()
             up_vec = Vector((0, 0, 1))
             right_vec = forward_vec.cross(up_vec).normalized()
@@ -68,8 +68,8 @@ class OBJECT_OT_place_cameras(bpy.types.Operator):
         bm.free()
         return {'FINISHED'}
 
-    def face_center(face):
-        return = sum((v.co for v in face.verts), mathutils.Vector((0, 0, 0))) / len(face.verts)
+    def face_center(self, face, obj_matrix):
+        return sum((obj_matrix @ v.co for v in face.verts), Vector()) / len(face.verts)
 
     def del_tree(self, coll):
         for c in coll.children:
