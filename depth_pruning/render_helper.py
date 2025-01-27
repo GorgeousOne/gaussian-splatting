@@ -171,7 +171,10 @@ if __name__ == "__main__":
     sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
     render_trimesh_voxel(plotter, sparse_voxels, 'sparse occ grid')
 
-    mesh_voxels = trimesh.load(mesh_path).voxelized(0.1)
+    # mesh_voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.1)
+    # mo.save_voxel(mesh_voxels, '/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+    mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+
     render_trimesh_voxel(plotter, mesh_voxels, 'mesh occ grid')
 
     mesh = pv.read(mesh_path)

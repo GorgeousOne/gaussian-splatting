@@ -47,11 +47,11 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, voxel_path, voxel_iterations):
     # >===
-    # mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
-    mesh_path = '/home/mighty/Documents/blender/bedroom2/occupancy-mesh.obj'
-    voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.05)
+    if voxel_path:
+        print('Loading pruning occupancy grid.')
+        voxels = mo.load_voxel(voxel_path)
     # <===
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
@@ -204,10 +204,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    # if iteration >= 5000 and iteration % 1000 == 0:
-                        # gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii, voxels)
-                    # else:
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii, None)
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
+
+                # >===
+                if voxel_path and iteration in voxel_iterations:
+                    print(f"\n[ITER {iteration}] Pruning voxels")
+                    gaussians.prune_by_occupancy(voxels, radii)
+                # <===
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -305,14 +308,13 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15_000])
-    parser.add_argument("--start_checkpoint", type=str, default = None)
-    args = parser.parse_args(sys.argv[1:])
+    parser.add_argument("--start_checkpoint", type=str, default=None)
 
-    # >=== DEBUG
-    # test_args = sys.argv[1:] + ["-m", "./output/debug", "-s", "/home/mighty/repos/datasets/db/playroom/metashape_reco"]
-    # args = parser.parse_args(test_args)
-    # args.save_iterations.append(args.iterations)
+    # >===
+    parser.add_argument('--voxel', type=str, default=None, help='Path to .npz voxel file for pruning using occupancy grid.')
+    parser.add_argument('--voxel_iterations', nargs='+', type=int, default=[i for i in range(5000, 30001, 1000)], help='Iterations to perform voxel pruning.')
     # <===
+    args = parser.parse_args(sys.argv[1:])
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
@@ -322,7 +324,7 @@ if __name__ == "__main__":
     if not args.disable_viewer:
         network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.voxel, args.voxel_iterations)
 
     # All done
     print("\nTraining complete.")
