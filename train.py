@@ -22,12 +22,10 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
-# >===
+
 import depth_pruning.make_occupancy as mo
 import depth_pruning.training_render as tr
-import trimesh
 import time
-# <===
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -48,11 +46,9 @@ except:
     SPARSE_ADAM_AVAILABLE = False
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, voxel_path, voxel_iterations):
-    # >===
     if voxel_path:
         print('Loading pruning occupancy grid.')
         voxels = mo.load_voxel(voxel_path)
-    # <===
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
@@ -79,7 +75,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_indices = list(range(len(viewpoint_stack)))
     ema_loss_for_log = 0.0
     ema_Ll1depth_for_log = 0.0
-
 
     # >===
     logs_buffer = []
@@ -206,11 +201,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                # >===
                 if voxel_path and iteration in voxel_iterations:
                     print(f"\n[ITER {iteration}] Pruning voxels")
                     gaussians.prune_by_occupancy(voxels, radii)
-                # <===
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -312,10 +305,16 @@ if __name__ == "__main__":
 
     # >===
     parser.add_argument('--voxel', type=str, default=None, help='Path to .npz voxel file for pruning using occupancy grid.')
-    parser.add_argument('--voxel_iterations', nargs='+', type=int, default=[i for i in range(5000, 30001, 1000)], help='Iterations to perform voxel pruning.')
+    parser.add_argument('--voxel_iterations', nargs='+', type=int, default=[i for i in range(1000, 30001, 1000)], help='Iterations to perform voxel pruning.')
     # <===
     args = parser.parse_args(sys.argv[1:])
     print("Optimizing " + args.model_path)
+
+    # <===
+    os.makedirs(args.model_path, exist_ok = True)
+    with open(os.path.join(args.model_path, "arparse_args"), 'w') as args_log_f:
+        args_log_f.write(str(args))
+    # <===
 
     # Initialize system state (RNG)
     safe_state(args.quiet)

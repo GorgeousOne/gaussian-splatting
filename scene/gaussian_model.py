@@ -470,18 +470,26 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    # >===
-    def prune_by_occupancy(self, voxels:VoxelGrid, radii):
-        self.tmp_radii = radii
+    def prune_by_occupancy(self, voxels:VoxelGrid):
 
         points = self._xyz.detach().cpu().numpy()
         prune_mask = voxels.is_filled(points)
-        self.prune_points(torch.from_numpy(~prune_mask))
+        # self.prune_points(~torch.from_numpy(prune_mask))
 
-        # is this garbage collection?
-        tmp_radii = self.tmp_radii
-        self.tmp_radii = None
-    # <===
+        valid_points_mask = torch.from_numpy(prune_mask)
+        optimizable_tensors = self._prune_optimizer(valid_points_mask)
+
+        self._xyz = optimizable_tensors["xyz"]
+        self._features_dc = optimizable_tensors["f_dc"]
+        self._features_rest = optimizable_tensors["f_rest"]
+        self._opacity = optimizable_tensors["opacity"]
+        self._scaling = optimizable_tensors["scaling"]
+        self._rotation = optimizable_tensors["rotation"]
+
+        self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
+
+        self.denom = self.denom[valid_points_mask]
+        self.max_radii2D = self.max_radii2D[valid_points_mask]
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)

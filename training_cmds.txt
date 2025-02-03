@@ -6,6 +6,8 @@ colmap model_converter --input_path sparse/0 --output_path sparse/0 --output_typ
 
 # train dataset
 python train.py -s /home/mighty/repos/datasets/tandt/train/ -m ./output/model-name --eval
+python ./train.py -s /home/mighty/repos/datasets/hah_esszimmer2/ --eval --data_device=cpu -m ./output/hah_01-22_16_30
+
 # train with depth regularizazion
 python train.py -s /home/mighty/repos/datasets/tandt/train/ -d /home/mighty/repos/datasets/tandt/train/depths/ -m ./output/model-name --eval
 
@@ -43,6 +45,21 @@ python metrics.py --model_paths ./output/x
 # in directory repos
 python ./Depth-Anything-V2/run.py --encoder vitl --pred-only --grayscale --img-path /home/mighty/repos/datasets/tandt/train/images/ --outdir /home/mighty/repos/datasets/tandt/train/depths/
 python ./Depth-Anything-V2/run.py --encoder vitl --pred-only --grayscale --img-path /home/mighty/repos/datasets/db/playroom/images/ --outdir /home/mighty/repos/datasets/db/playroom/depths/
+
+# indoor scenes
+python run.py \
+  --encoder vitl \
+  --load-from checkpoints/depth_anything_v2_metric_hypersim_vitl.pth \
+  --max-depth 20 \
+  --img-path /home/mighty/repos/datasets/hah_esszimmer2/images/ \
+  --outdir /home/mighty/repos/datasets/hah_esszimmer2/any_depth/ \
+  --pred-only \
+  --save-numpy \
+  --grayscale
+
+[--input-size <size>]
+
+
 
 # generate depth scaling json
 # "gaussian-splatting" again
