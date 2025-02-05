@@ -173,9 +173,11 @@ if __name__ == "__main__":
 
     # mesh_voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.1)
     # mo.save_voxel(mesh_voxels, '/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
-    mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
-
-    render_trimesh_voxel(plotter, mesh_voxels, 'mesh occ grid')
+    # mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+    mesh_voxels2 = mo.load_voxel('/home/mighty/Documents/blender/bedroom2/occupancy_grid_thin.npz')
+    mesh_voxels3 = mo.load_voxel('/home/mighty/Documents/blender/bedroom2/obj_occupancy.npz')
+    render_trimesh_voxel(plotter, mesh_voxels2, 'thin occ')
+    render_trimesh_voxel(plotter, mesh_voxels3, 'thick occ')
 
     mesh = pv.read(mesh_path)
     actor = plotter.add_mesh(mesh)

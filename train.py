@@ -201,12 +201,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                if voxel_path and iteration in voxel_iterations:
-                    print(f"\n[ITER {iteration}] Pruning voxels")
-                    gaussians.prune_by_occupancy(voxels, radii)
-
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
+
+            if voxel_path and iteration in voxel_iterations:
+                removed, total = gaussians.prune_by_occupancy(voxels)
+                percent = 100. * removed / total
+                print(f"\n[ITER {iteration}] Pruning voxels ({removed:7}/{total:7}, {percent:3.1f}%)")
+                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{total},{removed}")
+
 
             # Optimizer step
             if iteration < opt.iterations:

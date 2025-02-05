@@ -19,11 +19,29 @@ def voxelize_pcd(points3d:np.ndarray, density:float):
 
     return voxel.VoxelGrid(
         enc.SparseBinaryEncoding(occupied_index - origin_index),
-        transform=tr.scale_and_translate(scale=density, translate=origin_position),
-    )
+        transform=tr.scale_and_translate(scale=density, translate=origin_position))
 
-def voxelize_mesh(mesh:base.Trimesh, density:float):
-    return mesh.voxelized(density)
+def voxelize_mesh(mesh:base.Trimesh, density:float, solidify=True) -> voxel.VoxelGrid:
+    voxels = mesh.voxelized(density)
+    if not solidify:
+        return voxels
+
+    indices = voxels.sparse_indices
+    from itertools import product
+    neighbor_offsets = np.array(list(product([-1, 0, 1], repeat=3)))
+    neighbor_indices = indices[:, None, :] + neighbor_offsets  # Shape: (N, 26, 3)
+    neighbor_indices = neighbor_indices.reshape(-1, 3)  # Shape: (N*26, 3)
+    unique, _ = grouping.unique_rows(neighbor_indices)
+
+    occupied_index = neighbor_indices[unique]
+    origin_index = occupied_index.min(axis=0)
+    new_transform = voxels.transform.copy()
+    new_transform[:3,3] += origin_index * density
+
+    return voxel.VoxelGrid(
+        enc.SparseBinaryEncoding(occupied_index - origin_index),
+        transform=new_transform)
+
 
 def save_voxel(voxel_grid:voxel.VoxelGrid, npz_file:str):
     '''
@@ -55,8 +73,8 @@ def load_voxel(npz_file:str):
 
     return voxel.VoxelGrid(
         enc.SparseBinaryEncoding(data['indices']),
-        data['transform'],
-    )
+        data['transform'])
+
 
 if __name__ == '__main__':
     import trimesh

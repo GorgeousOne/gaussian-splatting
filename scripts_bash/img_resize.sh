@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SRC_DIR="/home/mighty/repos/datasets/hah_esszimmer/images"
-OUT_DIR="/home/mighty/repos/datasets/hah_esszimmer2/images"
+OUT_DIR="/home/mighty/repos/datasets/hah_esszimmer_small/images"
 SCALE=50
 
 # Create the output directory if it doesn't exist
