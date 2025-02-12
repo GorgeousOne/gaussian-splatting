@@ -93,7 +93,7 @@ if __name__ == '__main__':
     except Exception as e:
         raise IOError(f'Failed to load mesh from {args.mesh_path}: {e}')
 
-    voxel_grid = voxelize_mesh(mesh, args.density)
+    voxel_grid = voxelize_mesh(mesh, args.density, solidify=False)
 
     if args.output is None:
         output_path = args.mesh_path[:-4] + '_occupancy.npz'

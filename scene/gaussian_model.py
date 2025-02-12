@@ -257,6 +257,25 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
+    def save_masekd_ply(self, path, mask):
+        mkdir_p(os.path.dirname(path))
+        xyz = self._xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)[mask]
+        xyz = xyz[mask]
+        f_dc = self._features_dc.detach()[mask].transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach()[mask].transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = self._opacity.detach().cpu().numpy()[mask]
+        scale = self._scaling.detach().cpu().numpy()[mask]
+        rotation = self._rotation.detach().cpu().numpy()[mask]
+
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
+
     def reset_opacity(self):
         opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
@@ -470,10 +489,15 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    def prune_by_occupancy(self, voxels:VoxelGrid):
+    def prune_by_occupancy(self, voxels:VoxelGrid, diff_path=None, iter=None):
         points = self._xyz.detach().cpu().numpy()
         prune_mask = voxels.is_filled(points)
-        # self.prune_points(~torch.from_numpy(prune_mask))
+        diff_path = os.path.join(diff_path, "prune_" + str(iter))
+
+        if diff_path and iter:
+            self.save_masekd_ply(os.path.join(diff_path, "removed.ply"), ~prune_mask)
+            self.save_masekd_ply(os.path.join(diff_path, "after.ply"), prune_mask)
+            self.save_ply(os.path.join(diff_path, "before.ply"))
 
         valid_points_mask = torch.from_numpy(prune_mask)
         optimizable_tensors = self._prune_optimizer(valid_points_mask)

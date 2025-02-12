@@ -6,8 +6,8 @@ because of weird relative package imports.
 
 import os
 import colorsys
-import trimesh
-import trimesh.voxel.base as tv
+from trimesh import voxel
+
 
 import numpy as np
 import pyvista as pv
@@ -107,7 +107,7 @@ def render_cam(plotter, key, images, cameras, color='blue', scale=1, show_up=Tru
         plotter.add_mesh(cam_up, color='green', point_size=0)
 
 
-def render_trimesh_voxel(plotter, grid:tv.VoxelGrid, name):
+def render_trimesh_voxel(plotter, grid:voxel.VoxelGrid, name):
     render_voxels(plotter, grid.bounds[0], grid.matrix, grid.pitch[0], name)
 
 

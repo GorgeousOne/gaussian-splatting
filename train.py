@@ -205,7 +205,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.reset_opacity()
 
             if voxel_path and iteration in voxel_iterations:
-                removed, total = gaussians.prune_by_occupancy(voxels)
+                removed, total = gaussians.prune_by_occupancy(voxels, scene.model_path + "/point_cloud", iteration)
                 percent = 100. * removed / total
                 print(f"\n[ITER {iteration}] Pruning voxels ({removed:7}/{total:7}, {percent:3.1f}%)")
                 logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{total},{removed}")
@@ -300,10 +300,10 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 15_000, 20_000, 25_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[15_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[10_000, 20_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument('--disable_viewer', action='store_true', default=False)
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15_000])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[10_000, 20_000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
 
     # >===
@@ -314,6 +314,10 @@ if __name__ == "__main__":
     print("Optimizing " + args.model_path)
 
     # <===
+    if os.path.exists(args.model_path + "/point_cloud"):
+        print("Are you sure you want to override ", args.model_path)
+        exit(0)
+
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "arparse_args"), 'w') as args_log_f:
         args_log_f.write(str(args))
