@@ -38,10 +38,6 @@ def norm_vec(v, scale=1):
     return v / mag * scale
 
 
-def c2w_vec(v_cam, c2w_rot, c2w_t):
-    return c2w_rot @ v_cam + c2w_t
-
-
 def fetchObj(path):
     with open(path) as file:
         vertices, colors, normals = [], [], []
@@ -142,7 +138,8 @@ def convert_bin2ply(bin_path):
 
 
 if __name__ == "__main__":
-    sparse_ply_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.ply'
+    # sparse_ply_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.ply'
+    sparse_ply_path = '/home/mighty/repos/datasets/hah/esszimmer_small/example.ply'
     sparse_bin_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin'
     mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
     pcds_dir = '/home/mighty/repos/datasets/db/playroom/metashape_reco/pcds'
@@ -174,8 +171,8 @@ if __name__ == "__main__":
     # mesh_voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.1)
     # mo.save_voxel(mesh_voxels, '/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
     # mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
-    mesh_voxels2 = mo.load_voxel('/home/mighty/Documents/blender/bedroom2/occupancy_grid_thin.npz')
-    mesh_voxels3 = mo.load_voxel('/home/mighty/Documents/blender/bedroom2/obj_occupancy.npz')
+    mesh_voxels2 = mo.load_voxel('/home/mighty/repos/datasets/hah/obj/hah_occupancy_thin.npz')
+    mesh_voxels3 = mo.load_voxel('/home/mighty/repos/datasets/hah/obj/hah_occupancy_thick.npz')
     render_trimesh_voxel(plotter, mesh_voxels2, 'thin occ')
     render_trimesh_voxel(plotter, mesh_voxels3, 'thick occ')
 
