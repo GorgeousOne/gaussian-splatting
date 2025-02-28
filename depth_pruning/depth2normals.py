@@ -109,9 +109,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    key = 83
-    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00087_DxO_83.png", cv2.IMREAD_UNCHANGED)
-    rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00074_DxO_71.png", cv2.IMREAD_UNCHANGED)
+    key = 54
+    rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00087_DxO_83.png", cv2.IMREAD_UNCHANGED)
+    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00074_DxO_71.png", cv2.IMREAD_UNCHANGED)
+    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00057_DxO_54.png", cv2.IMREAD_UNCHANGED)
+    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00070_DxO_67.png", cv2.IMREAD_UNCHANGED)
     inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
 
     eps = 1e-6  # Small value to avoid division by zero

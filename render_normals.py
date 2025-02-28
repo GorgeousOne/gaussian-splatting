@@ -6,8 +6,8 @@ from gaussian_renderer import render
 import depth_pruning.training_render as tr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
-
-
+import numpy as np
+from scipy.spatial.transform import Rotation
 
 from scene.cameras import Camera
 import math
@@ -72,9 +72,8 @@ def render_normals(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
-
     rendered_image = F.normalize(rendered_image, dim=0)
-    rendered_image = rendered_image * 0.5 + 0.5
+    rendered_image = (rendered_image + 1) * 0.5
 
     # i think this is not necessary... theoretically
     rendered_image = rendered_image.clamp(0, 1)
@@ -125,8 +124,12 @@ def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
 def get_viewspace_normals(viewpoint_camera:Camera, pc:GaussianModel):
     scales = pc.get_scaling
     quats = pc.get_rotation
-    cam_pos = torch.from_numpy(viewpoint_camera.T).float().cuda()
-    cam_rot = torch.from_numpy(viewpoint_camera.R).float().cuda()
+
+    # reconstructed from utils/graphics_utils#getWorld2View
+    # there's some fuckery going on because they construct the world2view matrix with an inverted rotation matrix(?)
+    cam_R_view = torch.from_numpy(viewpoint_camera.R.T).float().cuda()
+    cam_T_world = torch.from_numpy(viewpoint_camera.R @ -viewpoint_camera.T).float().cuda()
+    print(cam_T_world)
 
     # get the normals of the gaussians (axis vector of smallest radius, but rotated)
     normals = F.one_hot(torch.argmin(scales, dim=-1), num_classes=3).float()
@@ -134,35 +137,45 @@ def get_viewspace_normals(viewpoint_camera:Camera, pc:GaussianModel):
     normals = F.normalize(normals, dim=1)
     normals = torch.bmm(rots, normals[:, :, None]).squeeze(-1)
 
-    # calculate view direction
-    viewdirs = pc.get_xyz - cam_pos
+    # calculate view directions to gaussians
+    viewdirs = pc.get_xyz - cam_T_world
     viewdirs = F.normalize(viewdirs, dim=-1)
 
-    # flip normals facing away from the camera (both sides of a gaussian would face the camera)
-    dots = (normals * viewdirs).sum(-1)
+    # find normals facing away from the camera based on view directions
+    dots = torch.sum(normals * viewdirs, dim=-1)
     negative_dot_indices = dots < 0
-    # normals[negative_dot_indices] = -normals[negative_dot_indices]
+    normals[~negative_dot_indices] *= -1
 
-    # normals = normals @ cam_rot
+    # rotate normals from world to camera space
+    normals = torch.matmul(cam_R_view, normals.T).T
+    # flip z values because inria camera implementation uses +z as forward instead of -z
+    normals[:, 2] *= -1
+    # flip y values because inria camera uses -y as upwards instead of +y
+    normals[:, 1] *= -1
+
     return normals
-
 
 def training(dataset, opt, pipe, ply_path):
     gaussians = GaussianModel(dataset.sh_degree, "default")
+    # gaussians = GaussianModel(0, "default")
     scene = Scene(dataset, gaussians)
     #dont load ply before scene initialization, otherwise gaussians get overwritten
     gaussians.load_ply(ply_path)
 
     bg_color = [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    bg = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
     viewpoint_stack = scene.getTrainCameras().copy()
     cam_name = "DSC00087_DxO_83.jpg"
-    cam_name = "DSC00074_DxO_71.jpg"
+    # cam_name = "DSC00074_DxO_71.jpg"
+    # cam_name = "DSC00057_DxO_54.jpg"
+    # cam_name = "DSC00070_DxO_67.jpg"
     viewpoint_cam = next(cam for cam in viewpoint_stack if cam.image_name == cam_name)
-    # pipe.debug = True
 
-    bg = torch.rand((3), device="cuda") if opt.random_background else background
+    # rot_y = Rotation.from_euler('xyz', [0, 90, 0], degrees=True).as_matrix()
+    # np.set_printoptions(precision=2, suppress=True)
+    # # print(rot_y)
+    # viewpoint_cam.update_transform_world(rot_y, np.array([-150, 0, 0]))
 
     render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=False)
     image = render_pkg["render"]
@@ -172,8 +185,7 @@ def training(dataset, opt, pipe, ply_path):
     image_n =render_pkg_n["render"]
     gt_image = viewpoint_cam.original_image.cuda()
 
-    diff = torch.abs(image_n - image)
-    tr.show_images_side_by_side(image_n, gt_image, None)
+    tr.show_images_side_by_side(image_n, image, None)
 
 
 if __name__ == "__main__":
