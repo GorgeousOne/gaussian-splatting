@@ -3,7 +3,7 @@ import cv2
 
 def show_images_side_by_side(img1, img2, depth, window_name='Comparison'):
     img1 = img1.detach().cpu().numpy()
-    img2 = img2.detach().cpu().numpy    ()
+    img2 = img2.detach().cpu().numpy()
     # depth = depth.detach().cpu().numpy()
 
     # Assuming img1 and img2 are [C, H, W] and C=3
@@ -13,7 +13,8 @@ def show_images_side_by_side(img1, img2, depth, window_name='Comparison'):
 
     # Convert to uint8
     #dont minmax normal renders
-    img1 = (img1 * 255).astype(np.uint8) #cv2.normalize(img1, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    img1 = (img1 * 128 + 128).astype(np.uint8) #cv2.normalize(img1, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+    # img2 = (img2 * 128 + 128).astype(np.uint8)
     img2 = cv2.normalize(img2, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
     img1 = img1[:, :, [2, 1, 0]] # RGB -> BGR conversion
     img2 = img2[:, :, [2, 1, 0]]
@@ -24,8 +25,10 @@ def show_images_side_by_side(img1, img2, depth, window_name='Comparison'):
 
     combined_image = np.concatenate((img1, img2), axis=1)
     cv2.imshow(window_name, combined_image)
-    while True:
-        # wait for esc key to close window
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
-    cv2.destroyAllWindows()
+    cv2.waitKey(1)
+
+    # while True:
+    #     # wait for esc key to close window
+    #     if cv2.waitKey(1) & 0xFF == 27:
+    #         break
+    # cv2.destroyAllWindows()

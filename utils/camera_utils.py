@@ -42,6 +42,21 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dat
     else:
         invdepthmap = None
 
+    if cam_info.normals_path != "":
+        try:
+            normalmap = cv2.cvtColor(cv2.imread(cam_info.normals_path, -1), cv2.COLOR_BGR2RGB)
+        except FileNotFoundError:
+            print(f"Error: The normals file at path '{cam_info.normals_path}' was not found.")
+            raise
+        except IOError:
+            print(f"Error: Unable to open the image file '{cam_info.normals_path}'. It may be corrupted or an unsupported format.")
+            raise
+        except Exception as e:
+            print(f"An unexpected error occurred when trying to read normals at {cam_info.normals_path}: {e}")
+            raise
+    else:
+        normalmap = None
+
     orig_w, orig_h = image.size
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
@@ -65,7 +80,7 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dat
 
     return Camera(resolution, colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T,
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, depth_params=cam_info.depth_params,
-                  image=image, invdepthmap=invdepthmap,
+                  image=image, invdepthmap=invdepthmap, normalmap=normalmap,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device,
                   train_test_exp=args.train_test_exp, is_test_dataset=is_test_dataset, is_test_view=cam_info.is_test)
 
@@ -79,6 +94,9 @@ def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_nerf_syntheti
         ]
         for future in tqdm(futures, total=len(futures), desc="Loading Cameras"):
             camera_list.append(future.result())
+        # for id, cam_info in enumerate(cam_infos):
+        #     print(id)
+        #     camera_list.append(loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dataset))
 
     return camera_list
 

@@ -7,6 +7,7 @@ import cv2
 import matplotlib.pyplot as plt
 from typing import List
 import utils.read_write_model as rwm
+import tqdm
 
 def get_camera_rays(H, W, focal):
     """calculate ray directions for each pixel in the image"""
@@ -20,6 +21,7 @@ def get_camera_rays(H, W, focal):
 # https://atyuwen.github.io/posts/normal-reconstruction
 def compute_normals(depths, points):
     # get 2 pixel depths neighbors in each direction
+
     neighbor_depths = [
         torch.roll(depths, shifts=(-1, 0), dims=(0, 1)),
         torch.roll(depths, shifts=(-2, 0), dims=(0, 1)),
@@ -63,23 +65,10 @@ def compute_normals(depths, points):
     return normal
 
 
-def get_normal_map(depth_map, key, cameras, images: List[rwm.Image]):
-    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/test_depth.png", cv2.IMREAD_UNCHANGED)
-    # inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
-    # eps = 1e-6  # Small value to avoid division by zero
-    # depth_map = torch.tensor(1.0 / (inv_depth_map + eps))
-
-    # invmonodepthmap = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_any/DSC00087_DxO_83.png", cv2.IMREAD_UNCHANGED)
-    # if invmonodepthmap.ndim != 2:
-    #     invmonodepthmap = invmonodepthmap[..., 0]
-    # invmonodepthmap = invmonodepthmap.astype(np.float32) / (2**16)
-    # invmonodepthmap[invmonodepthmap < 1e-3] = np.nan
-    # depth_map =  torch.tensor(1.0 / (invmonodepthmap + 1e-6))
-
+def get_normal_map(depth_map, cameras, image_meta: rwm.Image):
     # i dont know flip and reflip
     depth_map = depth_map.fliplr()
 
-    image_meta = images[key]
     cam_intrinsic = cameras[image_meta.camera_id]
     depth_shape = depth_map.shape
     map_scale = depth_shape[0] / cam_intrinsic.height
@@ -109,21 +98,34 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    key = 54
-    rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00087_DxO_83.png", cv2.IMREAD_UNCHANGED)
-    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00074_DxO_71.png", cv2.IMREAD_UNCHANGED)
-    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00057_DxO_54.png", cv2.IMREAD_UNCHANGED)
-    # rgba = cv2.imread("/home/mighty/repos/datasets/hah/esszimmer_small/depth_32/DSC00070_DxO_67.png", cv2.IMREAD_UNCHANGED)
-    inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
+    normals_dir = os.path.join(args.base_dir, "normals")
+    os.makedirs(normals_dir, exist_ok=True)
 
-    eps = 1e-6  # Small value to avoid division by zero
-    depth_map = torch.tensor(1.0 / (inv_depth_map + eps))
-    depth_map = depth_map
+    force = False
 
-    normal_map = get_normal_map(depth_map, key, cam_intrinsics, images_metas)
-    normal_map = 0.5 * (normal_map + 1.0)
+    for image_meta in tqdm.tqdm(images_metas.values()):
+        img_name = image_meta.name.split('.')[0]
+        out_path = os.path.join(normals_dir, img_name + ".png")
 
-    plt.figure(figsize=(10, 8))
-    # plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
-    plt.imshow(normal_map, interpolation='nearest')
-    plt.show()
+        if os.path.exists(out_path) and not force:
+            continue
+
+        depth_name = os.path.join(args.depths_dir, img_name + ".png")
+        rgba = cv2.imread(depth_name, cv2.IMREAD_UNCHANGED)
+        inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
+
+        eps = 1e-6  # Small value to avoid division by zero
+        depth_map = torch.tensor(1.0 / (inv_depth_map + eps))
+        depth_map = depth_map
+
+        normal_map = get_normal_map(depth_map, cam_intrinsics, image_meta)
+        normal_map = 0.5 * (normal_map + 1.0)
+
+        out_img = (normal_map * 255).numpy().astype(np.uint8)
+        out_img = out_img[:, :, [2, 1, 0]] # RGB -> BGR conversion
+        cv2.imwrite(out_path, out_img)
+
+        # plt.figure(figsize=(10, 8))
+        # plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
+        # plt.imshow(normal_map, interpolation='nearest')
+        # plt.show()

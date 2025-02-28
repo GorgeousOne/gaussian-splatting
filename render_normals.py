@@ -72,18 +72,20 @@ def render_normals(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
-    rendered_image = F.normalize(rendered_image, dim=0)
-    rendered_image = (rendered_image + 1) * 0.5
+
+    # normalize vectors for clear debugging view
+    # rendered_image = F.normalize(rendered_image, dim=0)
+    # rendered_image = (rendered_image + 1) * 0.5
 
     # i think this is not necessary... theoretically
-    rendered_image = rendered_image.clamp(0, 1)
+    rendered_image = rendered_image.clamp(-1, 1)
 
     out = {
-        "render": rendered_image,
-        "viewspace_points": screenspace_points,
-        "visibility_filter" : (radii > 0).nonzero(),
-        "radii": radii,
-        "depth" : depth_image
+        "normal": rendered_image
+        # "viewspace_points": screenspace_points,
+        # "visibility_filter" : (radii > 0).nonzero(),
+        # "radii": radii,
+        # "depth" : depth_image
         }
 
     return out
@@ -182,7 +184,7 @@ def training(dataset, opt, pipe, ply_path):
 
     # render_pkg = render_normals(viewpoint_cam,gaussians,pipe,bg)
     render_pkg_n = render_normals(viewpoint_cam, gaussians, pipe, bg)
-    image_n =render_pkg_n["render"]
+    image_n =render_pkg_n["normal"] * 0.5 + 0.5
     gt_image = viewpoint_cam.original_image.cuda()
 
     tr.show_images_side_by_side(image_n, image, None)
