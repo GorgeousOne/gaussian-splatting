@@ -131,7 +131,6 @@ def get_viewspace_normals(viewpoint_camera:Camera, pc:GaussianModel):
     # there's some fuckery going on because they construct the world2view matrix with an inverted rotation matrix(?)
     cam_R_view = torch.from_numpy(viewpoint_camera.R.T).float().cuda()
     cam_T_world = torch.from_numpy(viewpoint_camera.R @ -viewpoint_camera.T).float().cuda()
-    print(cam_T_world)
 
     # get the normals of the gaussians (axis vector of smallest radius, but rotated)
     normals = F.one_hot(torch.argmin(scales, dim=-1), num_classes=3).float()

@@ -25,6 +25,9 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 
 import depth_pruning.make_occupancy as mo
 import depth_pruning.training_render as tr
+import render_normals as rn
+import losses
+
 import time
 
 try:
@@ -69,19 +72,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     iter_end = torch.cuda.Event(enable_timing = True)
 
     use_sparse_adam = opt.optimizer_type == "sparse_adam" and SPARSE_ADAM_AVAILABLE
+    normal_loss = losses.AdaptiveNormal()
     depth_l1_weight = get_expon_lr_func(opt.depth_l1_weight_init, opt.depth_l1_weight_final, max_steps=opt.iterations)
+    normals_l1_weight = get_expon_lr_func(opt.normal_l1_weight_init, opt.normal_l1_weight_final, max_steps=opt.iterations)
+
 
     viewpoint_stack = scene.getTrainCameras().copy()
     viewpoint_indices = list(range(len(viewpoint_stack)))
     ema_loss_for_log = 0.0
     ema_Ll1depth_for_log = 0.0
+    ema_Ll1normal_for_log = 0.0
 
     # >===
     logs_buffer = []
     start_time = time.time()
     logs_path = os.path.join(scene.model_path, "logs.csv")
     with open(logs_path, "w") as f:
-        f.write("time,iteration,loss,Ll1depth\n")
+        f.write("time,iteration,loss,Ll1depth,LL1normal\n")
     # <===
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
@@ -141,6 +148,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
 
+        # Normal regularization
+        if (iteration-1) % opt.normal_interval == 0:
+            if normals_l1_weight(iteration) > 0 and dataset.normals:
+                normal_pkg = rn.render_normals(viewpoint_cam, gaussians, pipe, bg)
+                normals = normal_pkg["normal"]
+                gt_normals = viewpoint_cam.normalmap.cuda()
+                Ll1normal_pure = normal_loss(gt_normals, normals, iteration)
+                Ll1normal = normals_l1_weight(iteration) * Ll1normal_pure
+                loss += Ll1normal
+                Ll1normal = Ll1normal.item()
+            else:
+                Ll1normal = 0
+
         # Depth regularization
         Ll1depth_pure = 0.0
         if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable:
@@ -160,17 +180,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_end.record()
 
         # >===
-        if (iteration % 200 == 0):
-            tr.show_images_side_by_side(image, gt_image, None)
+        if (iteration % 200 == 1):
+            if dataset.normals:
+                tr.show_images([(normals, tr.RenderMode.NORMAL), (image, tr.RenderMode.IMAGE)])
+            else:
+                tr.show_images([(image, tr.RenderMode.IMAGE), (gt_image, tr.RenderMode.IMAGE)])
         # <===
 
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
+            ema_Ll1normal_for_log = 0.4 * Ll1normal + 0.6 * ema_Ll1normal_for_log
 
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}"})
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Normal Loss": f"{ema_Ll1normal_for_log:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -178,7 +202,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # >=== Log training progress every 100 iterations
             if iteration % 10 == 0:
                 timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log}")
+                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log}{ema_Ll1normal_for_log}")
             if iteration % 1000 == 0:
                 with open(logs_path, "a") as f:
                     f.write("\n".join(logs_buffer) + "\n")

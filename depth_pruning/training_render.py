@@ -1,32 +1,47 @@
 import numpy as np
 import cv2
+from enum import Enum
 
-def show_images_side_by_side(img1, img2, depth, window_name='Comparison'):
-    img1 = img1.detach().cpu().numpy()
-    img2 = img2.detach().cpu().numpy()
-    # depth = depth.detach().cpu().numpy()
+class RenderMode(Enum):
+    IMAGE = 0
+    DEPTH = 1
+    NORMAL = 2
 
-    # Assuming img1 and img2 are [C, H, W] and C=3
-    img1 = np.transpose(img1, (1, 2, 0))
-    img2 = np.transpose(img2, (1, 2, 0))
-    # depth = np.transpose(depth, (1, 2, 0))
+def show_images(img_mode_pairs, window_name='Images'):
+    """
+    Display images side by side based on (image, mode) pairs.
 
-    # Convert to uint8
-    #dont minmax normal renders
-    img1 = (img1 * 128 + 128).astype(np.uint8) #cv2.normalize(img1, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-    # img2 = (img2 * 128 + 128).astype(np.uint8)
-    img2 = cv2.normalize(img2, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-    img1 = img1[:, :, [2, 1, 0]] # RGB -> BGR conversion
-    img2 = img2[:, :, [2, 1, 0]]
+    Args:
+        img_mode_pairs: List of tuples (image, mode) where mode is RenderMode
+        window_name: Name for the display window
+    """
+    processed_images = []
 
-    # depth = cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-    # depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_TURBO)
-    # combined_image = np.concatenate((img1, img2, depth_color), axis=1)
+    for img, mode in img_mode_pairs:
+        # Convert from tensor if needed
+        img = img.detach().cpu().numpy()
+        # Handle [C, H, W] format
+        img = np.transpose(img, (1, 2, 0))
 
-    combined_image = np.concatenate((img1, img2), axis=1)
+        # Process based on mode
+        if mode == RenderMode.NORMAL:
+            img = (img * 128 + 128).astype(np.uint8)
+        elif mode == RenderMode.DEPTH:
+            img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+            img = cv2.applyColorMap(img, cv2.COLORMAP_TURBO)
+        else:  # RenderMode.IMAGE
+            img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+
+        # RGB to BGR for OpenCV
+        # if len(img.shape) == 3 and img.shape[2] == 3:
+        img = img[:, :, [2, 1, 0]]
+        processed_images.append(img)
+
+    # Concatenate horizontally
+    combined_image = np.concatenate(processed_images, axis=1)
+    # Display
     cv2.imshow(window_name, combined_image)
-    cv2.waitKey(1)
-
+    return cv2.waitKey(1)
     # while True:
     #     # wait for esc key to close window
     #     if cv2.waitKey(1) & 0xFF == 27:

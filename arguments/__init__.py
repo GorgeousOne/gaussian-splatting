@@ -96,8 +96,9 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold = 0.0002
         self.depth_l1_weight_init = 1.0
         self.depth_l1_weight_final = 0.01
-        self.normal_l1_weight_init = 1.0
-        self.normal_l1_weight_final = 1.0
+        self.normal_l1_weight_init = 0.01
+        self.normal_l1_weight_final = 0.001
+        self.normal_interval = 1
         self.random_background = False
         self.optimizer_type = "default"
         super().__init__(parser, "Optimization Parameters")
