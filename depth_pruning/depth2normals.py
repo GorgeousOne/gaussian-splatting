@@ -4,10 +4,12 @@ import numpy as np
 import argparse
 import os
 import cv2
-import matplotlib.pyplot as plt
-from typing import List
-import utils.read_write_model as rwm
-import tqdm
+from tqdm import tqdm
+from depth_pruning.depth2pcd import load_depth_map
+
+import scene.dataset_readers as dr
+from utils.graphics_utils import fov2focal
+
 
 def get_camera_rays(H, W, focal):
     """calculate ray directions for each pixel in the image"""
@@ -65,15 +67,14 @@ def compute_normals(depths, points):
     return normal
 
 
-def get_normal_map(depth_map, cameras, image_meta: rwm.Image):
-    # i dont know flip and reflip
+def calc_normal_map(depth_map, cam:dr.CameraInfo):
+    # idk, couldnt get this right without flip and reflip at end
     depth_map = depth_map.fliplr()
 
-    cam_intrinsic = cameras[image_meta.camera_id]
     depth_shape = depth_map.shape
-    map_scale = depth_shape[0] / cam_intrinsic.height
+    map_scale = depth_shape[0] / cam.height
 
-    f_x = cam_intrinsic.params[0]
+    f_x = fov2focal(cam.FovX, cam.width)
     dirs = get_camera_rays(depth_shape[0], depth_shape[1], f_x * map_scale)
     points = dirs * depth_map[..., None]
 
@@ -88,44 +89,62 @@ def get_normal_map(depth_map, cameras, image_meta: rwm.Image):
     # ---
 
     normal_map = compute_normals(depth_map, points)
-    return normal_map.fliplr()
+    normal_map = normal_map.fliplr()
+    return 0.5 * (normal_map + 1.0)
+
+
+#okay shit, forgot about this, do i need 32 bit depth over 16 bit depth?
+def load_rgba_depth_map(depth_path):
+    rgba = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+    inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
+
+    eps = 1e-6  # Small value to avoid division by zero
+    depth_map = torch.tensor(1.0 / (inv_depth_map + eps))
+    depth_map = depth_map
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base_dir', default="../datasets/hah/esszimmer_small")
-    parser.add_argument('--depths_dir', default="../datasets/hah/esszimmer_small/depth_32")
-    parser.add_argument('--model_type', default="bin")
+    parser.add_argument('-s', '--source_path', default="../datasets/db/playroom/metashape_reco")
+    parser.add_argument('-d', '--depths', default="depths")
+    parser.add_argument('-r', '--rel_out_dir', default="normals")
     args = parser.parse_args()
 
-    cam_intrinsics, images_metas, points3d = rwm.read_model(os.path.join(args.base_dir, "sparse", "0"), ext=f".{args.model_type}")
-    normals_dir = os.path.join(args.base_dir, "normals")
+    depths_dir = os.path.join(args.source_path, args.depths)
+    normals_dir = os.path.join(args.source_path, args.rel_out_dir)
     os.makedirs(normals_dir, exist_ok=True)
+
+    from scene.dataset_readers import sceneLoadTypeCallbacks
+
+    #we should have a function for this shit
+    if os.path.exists(os.path.join(args.source_path, "sparse")):
+        scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.depths, '', False, False)
+    elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+        print("Found transforms_train.json file, assuming Blender data set!")
+        scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, False, args.depths, '', False)
+    else:
+        assert False, "Could not recognize scene type!"
+
 
     force = False
 
-    for image_meta in tqdm.tqdm(images_metas.values()):
-        img_name = image_meta.name.split('.')[0]
-        out_path = os.path.join(normals_dir, img_name + ".png")
+    for i in range(165, 166): #tqdm(range(len(scene_info.train_cameras))):
+        cam_info = scene_info.train_cameras[i]
+        out_path = os.path.join(normals_dir, cam_info.image_name + ".png")
 
         if os.path.exists(out_path) and not force:
             continue
 
-        depth_name = os.path.join(args.depths_dir, img_name + ".png")
-        rgba = cv2.imread(depth_name, cv2.IMREAD_UNCHANGED)
-        inv_depth_map = rgba.view(np.float32).reshape(rgba.shape[0], rgba.shape[1])
-
-        eps = 1e-6  # Small value to avoid division by zero
-        depth_map = torch.tensor(1.0 / (inv_depth_map + eps))
-        depth_map = depth_map
-
-        normal_map = get_normal_map(depth_map, cam_intrinsics, image_meta)
-        normal_map = 0.5 * (normal_map + 1.0)
+        depth_filepath = os.path.join(depths_dir, cam_info.image_name + ".png")
+        depth_map = load_depth_map(depth_filepath, cam_info.depth_params)
+        normal_map = calc_normal_map(torch.from_numpy(depth_map), cam_info)
 
         out_img = (normal_map * 255).numpy().astype(np.uint8)
         out_img = out_img[:, :, [2, 1, 0]] # RGB -> BGR conversion
-        cv2.imwrite(out_path, out_img)
+        # cv2.imwrite(out_path, out_img)
 
-        # plt.figure(figsize=(10, 8))
-        # plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
-        # plt.imshow(normal_map, interpolation='nearest')
-        # plt.show()
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 8))
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
+        plt.imshow(normal_map, interpolation='nearest')
+        plt.show()

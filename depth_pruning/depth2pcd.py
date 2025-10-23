@@ -16,14 +16,9 @@ import os
 from utils.graphics_utils import fov2focal
 
 
-def load_depth_map(depth_path, depth_param, is_nerf_synthetic):
-    # utils.camera_utils.py
-    # print('/home/mighty/Documents/blender/bedroom4/depth_32/image_0001.png')
-    # print(os.path.exists(depth_path), depth_path)
+def load_depth_map(depth_path, depth_param):
     try:
-        invdepthmap = cv2.imread(depth_path, -1).astype(np.float32)
-        print("and now?", np.max(invdepthmap), np.min(invdepthmap))
-        invdepthmap /= float(2**16)
+        invdepthmap = cv2.imread(depth_path, -1).astype(np.float32) / float(2**16)
     except FileNotFoundError:
         print(f"Error: The depth file at path '{cam_info.depth_path}' was not found.")
         raise
@@ -33,14 +28,14 @@ def load_depth_map(depth_path, depth_param, is_nerf_synthetic):
     except Exception as e:
         print(f"An unexpected error occurred when trying to read depth at {cam_info.depth_path}: {e}")
         raise    
-    scale = depth_param["scale"] if depth_param else 1
-    offset = depth_param["offset"] if depth_param else 0
+    scale = depth_param["scale"]
+    offset = depth_param["offset"]
+    valid_mask = invdepthmap > 0
+    depth_map = np.zeros_like(invdepthmap, dtype=np.float32)
 
     print("off", offset, "scale", scale)
-    print("and now?", np.max(invdepthmap), np.min(invdepthmap))
-    depthmap = 1. / (invdepthmap * scale + offset)
-    print("and now?", np.max(depthmap), np.min(depthmap))
-    return depthmap
+    depth_map[valid_mask] = 1.0 / (invdepthmap[valid_mask] * scale + offset)
+    return depth_map    
 
 
 # https://github.com/bmild/nerf/blob/18b8aebda6700ed659cb27a0c348b737a5f6ab60/run_nerf_helpers.py#L123
@@ -64,7 +59,7 @@ def get_scene_info_cloud(cam:dr.CameraInfo, is_nerf_synthetic):
     c2w_rot = cam.R
     c2w_t = -c2w_rot @ cam.T
     print('load depth', cam.depth_path, cam.depth_params, is_nerf_synthetic)
-    depth_map = load_depth_map(cam.depth_path, cam.depth_params, is_nerf_synthetic)
+    depth_map = load_depth_map(cam.depth_path, cam.depth_params)
     return get_cloud(depth_map, cam.height, f_x, c2w_t, c2w_rot, cam.depth_params)
 
 
@@ -80,9 +75,8 @@ def get_cloud(depth_map, cam_height, f_x, c2w_t, c2w_rot, depth_param):
     x, y, z = points.shape
     points = points.reshape(x * y, z)
 
-
-    # filter out points at infinity
-    valid_mask = np.isfinite(depth_map).flatten()
+    # filter out points at 0
+    valid_mask = (depth_map > 0).flatten()
     valid_points = points[valid_mask]
 
     return gu.BasicPointCloud(valid_points, np.ones_like(valid_points, dtype=np.uint) * 255, np.zeros_like(valid_points))
@@ -114,7 +108,7 @@ if __name__ == '__main__':
     os.makedirs(out_dir, exist_ok=True)
 
     print('Creating pcd from images:')
-    for i in range(0, 1):
+    for i in range(9, 10):
         cam_info = scene_info.train_cameras[i]
         ply_path = os.path.join(out_dir, cam_info.image_name + ".ply")
         if os.path.exists(ply_path) and not force_overwrite:
