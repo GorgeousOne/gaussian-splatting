@@ -8,12 +8,13 @@ import os
 import colorsys
 from trimesh import voxel
 
+from scene.dataset_readers import sceneLoadTypeCallbacks
+from types import SimpleNamespace
 
 import numpy as np
 import pyvista as pv
 import scene.dataset_readers as dr
 import utils.graphics_utils as gu
-import utils.read_write_model as rwm
 import depth_pruning.make_occupancy as mo
 
 class CheckboxList():
@@ -66,75 +67,15 @@ def render_pcd(plotter, pcd:gu.BasicPointCloud, name):
     checkboxes.add_checkbox(actor, name)
 
 
-import json
-from PIL import Image
-from utils.graphics_utils import focal2fov, fov2focal
+from utils.graphics_utils import fov2focal
 
-# scene.dataset_readers#readNerfSyntheticInfo
-def readCamerasFromTransforms(path, transformsfile, extension='.png'):
 
-    cam_infos = {}
-
-    with open(os.path.join(path, transformsfile)) as json_file:
-        contents = json.load(json_file)
-        fov_x = contents["camera_angle_x"]
-
-        frames = contents["frames"]
-        for idx, frame in enumerate(frames):
-            cam_name = os.path.join(path, frame["file_path"] + extension)
-
-            # NeRF 'transform_matrix' is a camera-to-world transform
-            c2w = np.array(frame["transform_matrix"])
-            # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
-            c2w[:3, 1:3] *= -1
-
-            # get the world-to-camera transform and set R, T
-            w2c = np.linalg.inv(c2w)
-            # R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
-            # T = w2c[:3, 3]
-            R = c2w[:3,:3]  # R is stored transposed due to 'glm' in CUDA code
-            T = c2w[:3, 3]
-
-            image_path = os.path.join(path, cam_name)
-            image = Image.open(image_path)
-
-            fovy = focal2fov(fov2focal(fov_x, image.size[0]), image.size[1])
-            fov_y = fovy
-
-            cam_infos[idx] = rwm.Camera(
-                id=idx,
-                model='model1',
-                width=image.size[0],
-                height=image.size[1],
-                params={
-                    'fov_x':fov_x,
-                    'foy_y':fov_y,
-                    'R':R,
-                    'T':T
-                }
-            )
-            # cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX,
-            #                 image_path=image_path, image_name=image_name,
-            #                 width=image.size[0], height=image.size[1], depth_path=depth_path, depth_params="", normals_path="", is_test=is_test))
-    return cam_infos
-
-def render_blender_cam(plotter, cam_infos, idx):
-    cam = cam_infos[idx]
-    render_cam(plotter, cam.params['T'], cam.params['R'], cam.width, cam.height, fov2focal(cam.params['fov_x'], cam.width))
-
-def render_colmap_cam(plotter, key, images, cameras):
-    image_meta = images[key]
-    cam_intrinsic = cameras[image_meta.camera_id]
-
-    # get pinhole camera focal length
-    f_x = cam_intrinsic.params[0]
-
-    c2w_rot = rwm.qvec2rotmat(image_meta.qvec).T
-    c2w_t = c2w_rot @ -image_meta.tvec
-
-    w = cam_intrinsic.width
-    h = cam_intrinsic.height
-    render_cam(plotter, c2w_t, c2w_rot, w, h, f_x)
+def render_scene_info_cam(plotter, cam:dr.CameraInfo, color='blue', scale=0.1, show_up=False):
+    f_x = fov2focal(cam.FovX, cam.width)
+    # no transpose because dataset_readers already does this
+    c2w_rot = cam.R
+    c2w_t = -c2w_rot @ cam.T
+    render_cam(plotter, c2w_t, c2w_rot, cam.width, cam.height, f_x, color, scale, show_up)
 
 
 def render_cam(plotter, c2w_t, c2w_rot, w, h, f_x, color='blue', scale=0.1, show_up=False):
@@ -212,55 +153,74 @@ if __name__ == "__main__":
     #testing bedroom sparse point cloud against camera positions
     sparse_ply_path = '/home/mighty/Documents/blender/bedroom3/points3d.ply'
     sparse_bin_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0/points3D.bin'
+
+    # obj mesh to display
     # mesh_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/mesh.obj'
     mesh_path = '/home/mighty/Documents/blender/bedroom2/occupancy_mesh.obj'
+
     pcds_dir = '/home/mighty/repos/datasets/db/playroom/metashape_reco/pcds'
 
 
+    # set path for blender bedroom cameras
+    # args = SimpleNamespace()
+    # args.source_path = '/home/mighty/Documents/blender/bedroom4'
+    # args.images = 'images'
+
+    # set path playroom cameras
+    args = SimpleNamespace()
+    args.source_path = '/home/mighty/repos/datasets/db/playroom'
+    args.images = ''
+
+    # load scene info (kinda only camemera infos)
+    if os.path.exists(os.path.join(args.source_path, "sparse")):
+        scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, '', '', False, False)
+    elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+        print("Found transforms_train.json file, assuming Blender data set!")
+        scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, False, '', '', False)
+    else:
+        assert False, "Could not recognize scene type!"
+
+
+    # create plotter
     plotter = pv.Plotter(window_size=[1920, 1080])
     checkboxes = CheckboxList(plotter)
 
-
+    # render pcd
     convert_bin2ply(sparse_bin_path)
     pcd = dr.fetchPly(sparse_ply_path)
-    render_pcd(plotter, pcd, 'sparse')
+    render_pcd(plotter, pcd, 'sparse PCD')
 
-    # cameras_path = '/home/mighty/repos/datasets/db/playroom/metashape_reco/sparse/0'
-    transforms_path = '/home/mighty/Documents/blender/bedroom4'
 
-    # # image_metas consists of cam extrinsics and image info
-    # cam_intrinsics, images_metas, points3d = rwm.read_model(cameras_path, ext='.bin')
-
-    # cam_intrinsics, images_metas, _ = rwm.read_model(cameras_path, ext='.text')
-    cam_infos = readCamerasFromTransforms(transforms_path, 'transforms_train.json')
-    for i in range(25, 57):
-        render_blender_cam(plotter, cam_infos, i)
-
-    # for key in range(1, 20): #images_metas.keys():
-    #     rainbow_color = hsv2rgb(key / len(images_metas) * 0.8, 1, 1)
-    #     render_colmap_cam(plotter, key, images_metas, cam_intrinsics, color=rainbow_color, scale=0.3, show_up=False)
+    for i in range(25, 76):
+        rainbow_color = hsv2rgb(i / len(scene_info.train_cameras) * 0.8, 1, 1)
+        render_scene_info_cam(plotter, scene_info.train_cameras[i], color=rainbow_color, scale=0.3, show_up=False)
     #     img_name = images_metas[key].name.split('.')[0] + '.ply'
     #     if key == 15:
     #         depth_pcd = dr.fetchPly(os.path.join(pcds_dir, img_name))
     #         render_pcd(plotter, depth_pcd, 'depth map proj ' + str(key))
 
-    # # bounds, sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
-    # # render_voxels(plotter, bounds[0], sparse_voxels, 0.1, 'sparse occ grid')
-    # sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
-    # render_trimesh_voxel(plotter, sparse_voxels, 'sparse occ grid')
 
-    # # mesh_voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.1)
-    # # mo.save_voxel(mesh_voxels, '/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
-    # # mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+    # render voxels of pcd
+    sparse_voxels = mo.voxelize_pcd(pcd.points, 0.1)
+    render_trimesh_voxel(plotter, sparse_voxels, 'sparse voxels')
+
+    # render db/playroom occupancy
+    # mesh_voxels = mo.voxelize_mesh(trimesh.load(mesh_path), 0.1)
+    # mo.save_voxel(mesh_voxels, '/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+    # mesh_voxels = mo.load_voxel('/home/mighty/repos/datasets/db/playroom/metashape_reco/occupancy_grid.npz')
+
+    # render voxels haus am horn
     # mesh_voxels2 = mo.load_voxel('/home/mighty/repos/datasets/hah/obj/hah_occupancy_thin.npz')
     # mesh_voxels3 = mo.load_voxel('/home/mighty/repos/datasets/hah/obj/hah_occupancy_thick.npz')
-    # render_trimesh_voxel(plotter, mesh_voxels2, 'thin occ')
-    # render_trimesh_voxel(plotter, mesh_voxels3, 'thick occ')
+    # render_trimesh_voxel(plotter, mesh_voxels2, 'fine voxels')
+    # render_trimesh_voxel(plotter, mesh_voxels3, 'coarse voxels')
 
+    # render obj mesh
     mesh = pv.read(mesh_path)
     actor = plotter.add_mesh(mesh)
     checkboxes.add_checkbox(actor, 'mesh', True)
 
+    # create grid
     plotter.show_axes()
     plotter.show_grid(
         grid=True,
@@ -268,5 +228,7 @@ if __name__ == "__main__":
         color='black'
     )
     plotter.view_xy()
+
+    # render orthographic
     # plotter.enable_parallel_projection()
     plotter.show()

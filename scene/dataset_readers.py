@@ -145,6 +145,26 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
+def readColmapDepth(depth_params_file):
+    try:
+        with open(depth_params_file, "r") as f:
+            depths_params = json.load(f)
+        all_scales = np.array([depths_params[key]["scale"] for key in depths_params])
+        if (all_scales > 0).sum():
+            med_scale = np.median(all_scales[all_scales > 0])
+        else:
+            med_scale = 0
+        for key in depths_params:
+            depths_params[key]["med_scale"] = med_scale
+
+    except FileNotFoundError:
+        print(f"Error: depth_params.json file not found at path '{depth_params_file}'.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
+        sys.exit(1)
+    return depths_params
+
 def readColmapSceneInfo(path, images, depths, normals, eval, train_test_exp, llffhold=8):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
@@ -161,24 +181,7 @@ def readColmapSceneInfo(path, images, depths, normals, eval, train_test_exp, llf
     ## if depth_params_file isnt there AND depths file is here -> throw error
     depths_params = None
     if depths != "":
-        try:
-            with open(depth_params_file, "r") as f:
-                depths_params = json.load(f)
-            all_scales = np.array([depths_params[key]["scale"] for key in depths_params])
-            if (all_scales > 0).sum():
-                med_scale = np.median(all_scales[all_scales > 0])
-            else:
-                med_scale = 0
-            for key in depths_params:
-                depths_params[key]["med_scale"] = med_scale
-
-        except FileNotFoundError:
-            print(f"Error: depth_params.json file not found at path '{depth_params_file}'.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
-            sys.exit(1)
-
+        depths_params = readColmapDepth(depth_params_file)
     if eval:
         if "360" in path:
             llffhold = 8
@@ -230,7 +233,7 @@ def readColmapSceneInfo(path, images, depths, normals, eval, train_test_exp, llf
                            is_nerf_synthetic=False)
     return scene_info
 
-def readCamerasFromTransforms(path, transformsfile, depths_folder, normals_folder, white_background, is_test, extension=".png"):
+def readCamerasFromTransforms(path, transformsfile, depths_folder, depths_params, normals_folder, white_background, is_test, extension=".png"):
     cam_infos = []
 
     with open(os.path.join(path, transformsfile)) as json_file:
@@ -255,13 +258,14 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, normals_folde
             image_name = Path(cam_name).stem
             image = Image.open(image_path)
 
-            im_data = np.array(image.convert("RGBA"))
+            # TODO find out if this is safe to comment out. my sleepy ass can only find references to imgage.size[], so i dont understand why even bother replacing the background here
+            # This feels like its going to be one the the most rookie mistake but i dont even care anymore
 
-            bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
-
-            norm_data = im_data / 255.0
-            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-            image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+            # im_data = np.array(image.convert("RGBA"))
+            # bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
+            # norm_data = im_data / 255.0
+            # arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+            # image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
 
             fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
             FovY = fovy
@@ -270,9 +274,16 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, normals_folde
             depth_path = os.path.join(depths_folder, f"{image_name}.png") if depths_folder != "" else ""
             normals_path = os.path.join(normals_folder, f"{image_name}.png") if depths_folder != "" else ""
 
+            depth_params = None
+            if depths_params is not None:
+                try:
+                    key = os.path.split(frame["file_path"])[1]
+                    depth_params = depths_params[key]
+                except:
+                    print("\n", key, "not found in depths_params")
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX,
                             image_path=image_path, image_name=image_name,
-                            width=image.size[0], height=image.size[1], depth_path=depth_path, normals_path=normals_path, depth_params=None, is_test=is_test))
+                            width=image.size[0], height=image.size[1], depth_path=depth_path, normals_path=normals_path, depth_params=depth_params, is_test=is_test))
 
     return cam_infos
 
@@ -280,10 +291,17 @@ def readNerfSyntheticInfo(path, white_background, depths, normals, eval, extensi
 
     depths_folder=os.path.join(path, depths) if depths != "" else ""
     normals_folder=os.path.join(path, normals) if depths != "" else ""
+
+    # i need these depth params :< I'll just add them here
+    depth_params_file = os.path.join(path, "depth_params.json")
+    depths_params = None
+    if depths != "":
+        depths_params = readColmapDepth(depth_params_file)
+
     print("Reading Training Transforms")
-    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", depths_folder, normals_folder, white_background, False, extension)
+    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", depths_folder, depths_params, normals_folder, white_background, False, extension)
     print("Reading Test Transforms")
-    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", depths_folder, normals_folder, white_background, True, extension)
+    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", depths_folder, depths_params, normals_folder, white_background, True, extension)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)
