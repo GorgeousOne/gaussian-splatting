@@ -148,6 +148,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
 
+        # >===
         # Normal regularization
         if (iteration-1) % opt.normal_interval == 0:
             if normals_l1_weight(iteration) > 0 and dataset.normals:
@@ -160,6 +161,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 Ll1normal = Ll1normal.item()
             else:
                 Ll1normal = 0
+        # <===
 
         # Depth regularization
         Ll1depth_pure = 0.0
@@ -202,7 +204,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # >=== Log training progress every 100 iterations
             if iteration % 10 == 0:
                 timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log}{ema_Ll1normal_for_log}")
+                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{ema_Ll1normal_for_log}")
             if iteration % 1000 == 0:
                 with open(logs_path, "a") as f:
                     f.write("\n".join(logs_buffer) + "\n")
@@ -337,7 +339,7 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     print("Optimizing " + args.model_path)
 
-    # <===
+    # >===
     if os.path.exists(args.model_path + "/point_cloud"):
         print("Are you sure you want to override ", args.model_path)
         exit(0)

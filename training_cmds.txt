@@ -70,3 +70,8 @@ python utils/make_depth_scale.py --base_dir /home/mighty/repos/datasets/db/playr
 
 git diff -w main...frequency-injection -- train.py depth_pruning/make_occupancy.py scene/gaussian_model.py > patch.diff
 #-w ignores all whitespace changes
+
+
+--- SIBR building
+cd SIBR_viewers
+cmake --build build --target install --config RelWithDebInfo

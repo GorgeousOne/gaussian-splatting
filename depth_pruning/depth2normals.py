@@ -126,25 +126,33 @@ if __name__ == '__main__':
         assert False, "Could not recognize scene type!"
 
 
-    force = False
+    exist_ok = False
 
-    for i in range(165, 166): #tqdm(range(len(scene_info.train_cameras))):
+    for i in tqdm(range(len(scene_info.train_cameras))): #range(9, 10)):
         cam_info = scene_info.train_cameras[i]
         out_path = os.path.join(normals_dir, cam_info.image_name + ".png")
 
-        if os.path.exists(out_path) and not force:
+        if exist_ok and os.path.exists(out_path):
             continue
 
         depth_filepath = os.path.join(depths_dir, cam_info.image_name + ".png")
         depth_map = load_depth_map(depth_filepath, cam_info.depth_params)
         normal_map = calc_normal_map(torch.from_numpy(depth_map), cam_info)
 
+
+        valid_mask = depth_map > 0
+        normal_map[~valid_mask] = 0
+
         out_img = (normal_map * 255).numpy().astype(np.uint8)
         out_img = out_img[:, :, [2, 1, 0]] # RGB -> BGR conversion
-        # cv2.imwrite(out_path, out_img)
+        cv2.imwrite(out_path, out_img)
 
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(10, 8))
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
-        plt.imshow(normal_map, interpolation='nearest')
-        plt.show()
+        #depth test
+        
+        # import matplotlib.pyplot as plt
+        # plt.figure(figsize=(10, 8))
+        # plt.subplots_adjust(left=0, right=1, top=1, bottom=0) # rm window padding
+        # # plt.imshow(normal_map, interpolation='nearest')
+        # plt.imshow(depth_map, interpolation='nearest')
+        # plt.show()
+        # break

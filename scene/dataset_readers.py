@@ -145,6 +145,7 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
+# >===
 def readColmapDepth(depth_params_file):
     try:
         with open(depth_params_file, "r") as f:
@@ -164,6 +165,7 @@ def readColmapDepth(depth_params_file):
         print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
         sys.exit(1)
     return depths_params
+# <===
 
 def readColmapSceneInfo(path, images, depths, normals, eval, train_test_exp, llffhold=8):
     try:
@@ -258,6 +260,7 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, depths_params
             image_name = Path(cam_name).stem
             image = Image.open(image_path)
 
+            # >===
             # TODO find out if this is safe to comment out. my sleepy ass can only find references to imgage.size[], so i dont understand why even bother replacing the background here
             # This feels like its going to be one the the most rookie mistake but i dont even care anymore
 
@@ -266,13 +269,14 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, depths_params
             # norm_data = im_data / 255.0
             # arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
             # image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+            # <===
 
             fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
             FovY = fovy
             FovX = fovx
 
             depth_path = os.path.join(depths_folder, f"{image_name}.png") if depths_folder != "" else ""
-            normals_path = os.path.join(normals_folder, f"{image_name}.png") if depths_folder != "" else ""
+            normals_path = os.path.join(normals_folder, f"{image_name}.png") if normals_folder != "" else ""
 
             depth_params = None
             if depths_params is not None:
@@ -288,16 +292,17 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, depths_params
     return cam_infos
 
 def readNerfSyntheticInfo(path, white_background, depths, normals, eval, extension=".png"):
-
     depths_folder=os.path.join(path, depths) if depths != "" else ""
-    normals_folder=os.path.join(path, normals) if depths != "" else ""
+    normals_folder=os.path.join(path, normals) if normals != "" else ""
 
+    # >===
     # i need these depth params :< I'll just add them here
     depth_params_file = os.path.join(path, "depth_params.json")
     depths_params = None
     if depths != "":
         depths_params = readColmapDepth(depth_params_file)
-
+    # <===
+    
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", depths_folder, depths_params, normals_folder, white_background, False, extension)
     print("Reading Test Transforms")

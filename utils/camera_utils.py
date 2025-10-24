@@ -17,18 +17,21 @@ import cv2
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
+from scene.dataset_readers import CameraInfo
 
 WARNED = False
 
-def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dataset):
+def loadCam(args, id, cam_info:CameraInfo, resolution_scale, is_nerf_synthetic, is_test_dataset):
     image = Image.open(cam_info.image_path)
 
     if cam_info.depth_path != "":
         try:
-            if is_nerf_synthetic:
-                invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / 512
-            else:
-                invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / float(2**16)
+            # <===
+            # if is_nerf_synthetic:
+            #     invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / 512
+            # else:
+            # >===
+            invdepthmap = cv2.imread(cam_info.depth_path, -1).astype(np.float32) / float(2**16)
 
         except FileNotFoundError:
             print(f"Error: The depth file at path '{cam_info.depth_path}' was not found.")

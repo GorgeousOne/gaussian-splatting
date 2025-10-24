@@ -18,7 +18,9 @@ from utils.graphics_utils import fov2focal
 
 def load_depth_map(depth_path, depth_param):
     try:
-        invdepthmap = cv2.imread(depth_path, -1).astype(np.float32) / float(2**16)
+        inv_depthmap = cv2.imread(depth_path, -1).astype(np.float32) / (2**16)
+        valid_mask = inv_depthmap > 0
+ 
     except FileNotFoundError:
         print(f"Error: The depth file at path '{cam_info.depth_path}' was not found.")
         raise
@@ -30,11 +32,10 @@ def load_depth_map(depth_path, depth_param):
         raise    
     scale = depth_param["scale"]
     offset = depth_param["offset"]
-    valid_mask = invdepthmap > 0
-    depth_map = np.zeros_like(invdepthmap, dtype=np.float32)
+    depth_map = np.zeros_like(inv_depthmap, dtype=np.float32)
 
-    print("off", offset, "scale", scale)
-    depth_map[valid_mask] = 1.0 / (invdepthmap[valid_mask] * scale + offset)
+    # print("off", offset, "scale", scale)
+    depth_map[valid_mask] = 1.0 / (inv_depthmap[valid_mask] * scale + offset)
     return depth_map    
 
 
