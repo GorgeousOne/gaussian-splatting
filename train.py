@@ -13,6 +13,10 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim
+from lpipsPyTorch import lpips
+from utils.image_utils import psnr
+import csv
+
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -55,16 +59,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
-
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
+
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
-
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
@@ -84,15 +87,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_Ll1normal_for_log = 0.0
 
     # >===
-    logs_buffer = []
+    _, model_dir_name = os.path.split(dataset.model_path)
+    logs_path = os.path.join(dataset.model_path, f"logs_{model_dir_name}.csv")
+    if os.path.isfile(logs_path):
+        os.remove(logs_path)
     start_time = time.time()
-    logs_path = os.path.join(scene.model_path, "logs.csv")
-    with open(logs_path, "w") as f:
-        f.write("time,iteration,loss,Ll1depth,LL1normal\n")
+    # training_report_csv(logs_path, 0, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), start_time, [0])
     # <===
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+
     for iteration in range(first_iter, opt.iterations + 1):
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -155,6 +160,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 normal_pkg = rn.render_normals(viewpoint_cam, gaussians, pipe, bg)
                 normals = normal_pkg["normal"]
                 gt_normals = viewpoint_cam.normalmap.cuda()
+                # mask out 'infinity' areas
+                #normals[gt_normals==0] = 0
                 Ll1normal_pure = normal_loss(gt_normals, normals, iteration)
                 Ll1normal = normals_l1_weight(iteration) * Ll1normal_pure
                 loss += Ll1normal
@@ -202,17 +209,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # >=== Log training progress every 100 iterations
-            if iteration % 10 == 0:
-                timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{ema_Ll1normal_for_log}")
-            if iteration % 1000 == 0:
-                with open(logs_path, "a") as f:
-                    f.write("\n".join(logs_buffer) + "\n")
-                logs_buffer.clear()
+            # if iteration % 10 == 0:
+            #     timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+            #     logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{ema_Ll1normal_for_log}")
+            # if iteration % 1000 == 0:
+            #     with open(logs_path, "a") as f:
+            #         f.write("\n".join(logs_buffer) + "\n")
+            #     logs_buffer.clear()
             # <===
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            training_report_csv(logs_path, iteration, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), start_time, testing_iterations)
+
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -230,11 +239,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
 
-            if voxel_path and iteration in voxel_iterations:
-                removed, total = gaussians.prune_by_occupancy(voxels, scene.model_path + "/point_cloud", iteration)
-                percent = 100. * removed / total
-                print(f"\n[ITER {iteration}] Pruning voxels ({removed:7}/{total:7}, {percent:3.1f}%)")
-                logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{total},{removed}")
+            # if voxel_path and iteration in voxel_iterations:
+            #     removed, total = gaussians.prune_by_occupancy(voxels, scene.model_path + "/point_cloud", iteration)
+            #     percent = 100. * removed / total
+            #     print(f"\n[ITER {iteration}] Pruning voxels ({removed:7}/{total:7}, {percent:3.1f}%)")
+            #     logs_buffer.append(f"{timestamp},{iteration},{ema_loss_for_log},{ema_Ll1depth_for_log},{total},{removed}")
 
 
             # Optimizer step
@@ -253,6 +262,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
+
 def prepare_output_and_logger(args):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -268,12 +278,78 @@ def prepare_output_and_logger(args):
         cfg_log_f.write(str(Namespace(**vars(args))))
 
     # Create Tensorboard writer
-    tb_writer = None
-    if TENSORBOARD_FOUND:
-        tb_writer = SummaryWriter(args.model_path)
-    else:
-        print("Tensorboard not available: not logging progress")
-    return tb_writer
+    # tb_writer = None
+    # if TENSORBOARD_FOUND:
+    #     tb_writer = SummaryWriter(args.model_path)
+    # else:
+    #     print("Tensorboard not available: not logging progress")
+    # return tb_writer
+
+def training_report_csv(csv_path, iteration, scene, renderFunc, renderArgs, start_time, testing_iterations=None):
+    if iteration not in testing_iterations:
+        return
+    # torch.cuda.empty_cache()
+    timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+
+    # validate with hold out set & training images
+    validation_configs = [
+        {'name': 'test', 'cameras': scene.getTestCameras()},
+        {'name': 'train', 'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]} # render camera #6 #11 #16 #21 #26?
+    ]
+
+    testing_results = {}
+
+    for config in validation_configs:
+        if not config['cameras']:
+            continue
+        cfg_name = config['name']
+        cfg_results = {}
+
+        # render validation view
+        for _, viewpoint in enumerate(config['cameras']):
+            render_pkg = renderFunc(viewpoint, scene.gaussians, *renderArgs)
+
+            # for img_type, image in imgs.items():
+            render = torch.clamp(render_pkg['render'], 0.0, 1.0)
+            depth = depth=render_pkg['depth']
+            gt_image = torch.clamp(viewpoint.original_image.to('cuda'), 0.0, 1.0)
+
+            # calc all metrics
+            cfg_results[f'{cfg_name}_l1_render'] = cfg_results.get(f'{cfg_name}_l1_render', 0.0) + l1_loss(render, gt_image).mean().double()
+            cfg_results[f'{cfg_name}_ssim_render'] = cfg_results.get(f'{cfg_name}_ssim_render', 0.0) + ssim(render, gt_image).mean().double()
+            cfg_results[f'{cfg_name}_psnr_render'] = cfg_results.get(f'{cfg_name}_psnr_render', 0.0) + psnr(render, gt_image).mean().double()
+            cfg_results[f'{cfg_name}_lpips_render'] = cfg_results.get(f'{cfg_name}_lpips_render', 0.0) + lpips(render, gt_image, net_type='vgg')
+
+            # depth
+            if viewpoint.invdepthmap is not None:
+                mono_invdepth = viewpoint.invdepthmap.cuda()
+                cfg_results[f'{cfg_name}_l1_depth'] = cfg_results.get('{cfg_name}_l1_depth', 0.0) + l1_loss(depth, mono_invdepth).mean().double()
+            # normal
+            if viewpoint.normalmap is not None:
+                gt_normals = viewpoint.normalmap.cuda()
+                #sry too lazy to pass arguments properly (viewpoint, gaussians, pipe, bg)
+                normal_pkg = rn.render_normals(viewpoint, scene.gaussians, renderArgs[0], renderArgs[1])
+                normals = normal_pkg['normal']
+                cfg_results[f'{cfg_name}_l1_normal'] = cfg_results.get(f'{cfg_name}_l1_normal', 0.0) + l1_loss(normals, gt_normals).mean().double()
+
+
+        # average error metrics across image set
+        num_cams = len(config['cameras'])
+        cfg_results = {k: (v / num_cams).item() for k, v in cfg_results.items()}
+        testing_results.update(cfg_results)
+        
+    # write to csv log file
+    file_exists = os.path.isfile(csv_path)
+    with open(csv_path, 'a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            # add header on first open
+            header = ['iteration', 'time', *testing_results.keys(), 'total_points']
+            writer.writerow(header)
+
+        row = [iteration, timestamp, *[round(v, 6) for v in testing_results.values()], scene.gaussians.get_xyz.shape[0]]
+        writer.writerow(row)
+
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, train_test_exp):
     if tb_writer:
@@ -345,6 +421,7 @@ if __name__ == "__main__":
         exit(0)
 
     os.makedirs(args.model_path, exist_ok = True)
+
     with open(os.path.join(args.model_path, "arparse_args"), 'w') as args_log_f:
         args_log_f.write(str(args))
     # <===

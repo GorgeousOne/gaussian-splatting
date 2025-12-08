@@ -43,6 +43,7 @@ class Camera(nn.Module):
         resized_image_rgb = PILtoTorch(image, resolution)
         gt_image = resized_image_rgb[:3, ...]
         self.alpha_mask = None
+        # convert gt alpha channel to deptp mask    
         if resized_image_rgb.shape[0] == 4:
             self.alpha_mask = resized_image_rgb[3:4, ...].to(self.data_device)
         else:
@@ -78,6 +79,7 @@ class Camera(nn.Module):
                 self.invdepthmap = self.invdepthmap[..., 0]
             self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).to(self.data_device)
 
+        self.normalmap = None
         if normalmap is not None:
             self.normalmap = cv2.resize(normalmap, resolution, interpolation=cv2.INTER_NEAREST)
             # TODO do whatever you need to make sure normalmap is valid / resizing? handling invalid values? nan? inf?
